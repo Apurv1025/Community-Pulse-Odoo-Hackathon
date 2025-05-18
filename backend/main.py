@@ -157,23 +157,52 @@ async def create_event(
 from backend.models import EventUpdate  # Ensure correct import
 
 
+class EventUpdateModel(BaseModel):
+    """
+    Model for updating event fields. All fields are optional.
+    """
+    event_name: Optional[str] = None
+    event_description: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    category: Optional[str] = None
+    registration_start: Optional[datetime] = None
+    registration_end: Optional[datetime] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    img_url: Optional[str] = None
+
 @app.put("/events/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
-   event_id: int,
-   event_update: EventUpdate,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    event_id: int,
+    event_update: EventUpdateModel,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   with Session(engine) as session:
-       db_event = session.get(Event, event_id)
-       if not db_event:
-           raise HTTPException(status_code=404, detail="Event not found")
-       if db_event.organiser != current_user.username:
-           raise HTTPException(status_code=403, detail="Not authorized to edit this event")
-       event_data = event_update.dict(exclude_unset=True)
-       for key, value in event_data.items():
-           setattr(db_event, key, value)
-       session.add(db_event)
-       session.commit()
-       session.refresh(db_event)
-       return db_event
+    """
+    Update an event. Only provided fields will be updated.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if db_event.organiser != current_user.username:
+            raise HTTPException(status_code=403, detail="Not authorized to edit this event")
+        event_data = event_update.model_dump(exclude_unset=True)
+        for key, value in event_data.items():
+            setattr(db_event, key, value)
+        session.add(db_event)
+        session.commit()
+        session.refresh(db_event)
+        return db_event
+
+@app.get("/events/", response_model=list[Event])
+async def get_all_events():
+    """
+    Retrieve all events from the database.
+    """
+    with Session(engine) as session:
+        events = session.exec(select(Event)).all()
+        return events
+
 
