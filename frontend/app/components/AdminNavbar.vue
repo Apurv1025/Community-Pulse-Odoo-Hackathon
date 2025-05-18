@@ -43,21 +43,6 @@
             </div>
         </div>
     </nav>
-    <!-- Example: Show fetched results (optional, for demonstration) -->
-    <div v-if="showResults" class="bg-gray-100 p-4 mt-2 rounded">
-        <div v-if="eventResults.length">
-            <h3 class="font-bold mb-2">Event Results:</h3>
-            <ul>
-                <li v-for="event in eventResults" :key="event.id">{{ event.event_name }}</li>
-            </ul>
-        </div>
-        <div v-if="userResults.length">
-            <h3 class="font-bold mb-2">User Results:</h3>
-            <ul>
-                <li v-for="user in userResults" :key="user.username">{{ user.username }} ({{ user.email }})</li>
-            </ul>
-        </div>
-    </div>
 </template>
 
 <script setup>
@@ -70,61 +55,18 @@ const authStore = useAuthStore();
 
 const searchEventTerm = ref('');
 const searchUserTerm = ref('');
-const eventResults = ref([]);
-const userResults = ref([]);
-const showResults = ref(false);
 
-// Fetch events by search term
-async function searchEvents() {
+// Route to event search results page
+function searchEvents() {
     if (searchEventTerm.value.trim()) {
-        const config = useRuntimeConfig();
-        try {
-            const { data, error } = await useFetch(
-                `${config.public.backendUrl}/search/${encodeURIComponent(searchEventTerm.value.trim())}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authStore.session}`
-                    }
-                }
-            );
-            if (error.value) throw new Error(error.value.message || 'Failed to fetch events');
-            eventResults.value = data.value || [];
-            userResults.value = [];
-            showResults.value = true;
-            // Optionally, navigate to a search results page:
-            // router.push(`/search/${encodeURIComponent(searchEventTerm.value.trim())}`);
-        } catch (err) {
-            console.error('Error searching events:', err);
-        }
+        router.push(`/search/${encodeURIComponent(searchEventTerm.value.trim())}`);
     }
 }
 
-// Fetch users by search term (admin)
-async function searchUsers() {
+// Route to admin user search results page
+function searchUsers() {
     if (searchUserTerm.value.trim()) {
-        const config = useRuntimeConfig();
-        try {
-            const { data, error } = await useFetch(
-                `${config.public.backendUrl}/admin/usersearch/${encodeURIComponent(searchUserTerm.value.trim())}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authStore.session}`
-                    }
-                }
-            );
-            if (error.value) throw new Error(error.value.message || 'Failed to fetch users');
-            userResults.value = data.value || [];
-            eventResults.value = [];
-            showResults.value = true;
-            // Optionally, navigate to a user search results page:
-            // router.push(`/admin/usersearch/${encodeURIComponent(searchUserTerm.value.trim())}`);
-        } catch (err) {
-            console.error('Error searching users:', err);
-        }
+        router.push(`/admin/usersearch/${encodeURIComponent(searchUserTerm.value.trim())}`);
     }
 }
 
