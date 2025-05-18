@@ -21,3 +21,5 @@
 `pip install -r requirements.txt`
 
 `fastapi dev main.py`
+
+[text](https://drive.google.com/file/d/1qU1RMRF95TMKK4i_X07s159ZEvhBjMCe/view?usp=sharing)
