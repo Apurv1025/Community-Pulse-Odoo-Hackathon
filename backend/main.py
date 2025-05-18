@@ -175,7 +175,7 @@ class EventUpdateModel(BaseModel):
     state: Optional[str] = None
     img_url: Optional[str] = None
 
-@app.put("/events/edit/{event_id}", response_model=EventUpdate)
+@app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
     event_id: int,
     event_update: EventUpdateModel,
@@ -211,7 +211,7 @@ async def get_all_events():
         return events
     
 
-@app.get("/events/{event_id}", response_model=Event)
+@app.get("/event/{event_id}", response_model=Event)
 async def get_event(event_id: int):
     """
     Retrieve a specific event by its ID.
@@ -223,7 +223,7 @@ async def get_event(event_id: int):
         return db_event
 
 
-@app.delete("/events/delete/{event_id}", response_model=dict)
+@app.delete("/event/delete/{event_id}", response_model=dict)
 async def delete_event(
     event_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
