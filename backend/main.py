@@ -3,6 +3,11 @@ from typing import Annotated
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from backend.models import Event 
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
 from backend.models import *
 from backend.utils.auth import *
 from backend.utils.db import *
@@ -109,4 +114,66 @@ async def read_own_items(
 ):
     return [{"item_id": "Foo", "owner": current_user.username}]
 
+class EventCreate(BaseModel):
+   event_name: str
+   event_description: str
+   start_date: datetime
+   end_date: datetime
+   category: str
+   registration_start: datetime
+   registration_end: datetime
+   address: str
+   city: str
+   state: str
+   img_url: str
+
+
+@app.post("/event/create", response_model=Event)
+async def create_event(
+   event: EventCreate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   with Session(engine) as session:
+       db_event = Event(
+           event_name=event.event_name,
+           organiser=current_user.username,  # Set organiser from current user
+           event_description=event.event_description,
+           start_date=event.start_date,
+           end_date=event.end_date,
+           category=event.category,
+           registration_start=event.registration_start,
+           registration_end=event.registration_end,
+           address=event.address,
+           city=event.city,
+           state=event.state,
+           img_url=event.img_url
+       )
+       session.add(db_event)
+       session.commit()
+       session.refresh(db_event)
+       return db_event
+
+
+from backend.models import EventUpdate  # Ensure correct import
+
+
+@app.put("/events/edit/{event_id}", response_model=EventUpdate)
+async def update_event(
+   event_id: int,
+   event_update: EventUpdate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   with Session(engine) as session:
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           raise HTTPException(status_code=404, detail="Event not found")
+       if db_event.organiser != current_user.username:
+           raise HTTPException(status_code=403, detail="Not authorized to edit this event")
+       event_data = event_update.dict(exclude_unset=True)
+       for key, value in event_data.items():
+           setattr(db_event, key, value)
+       session.add(db_event)
+       session.commit()
+       session.refresh(db_event)
+       return db_event
 

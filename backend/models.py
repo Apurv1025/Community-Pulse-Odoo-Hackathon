@@ -1,4 +1,5 @@
 from sqlmodel import SQLModel, Field
+from datetime import datetime
 
 
 class Token(SQLModel):
@@ -29,19 +30,34 @@ class UserPublic(UserBase):
 class UserCreate(UserBase):
     password: str 
 
-# class User(SQLModel):
-#     id: int | None = Field(default=None, primary_key=True)
-#     username: str = Field(index=True, unique=True)
-#     email: str | None = Field(default=None, index=True)
-#     full_name: str | None = Field(default=None)
-#     disabled: bool | None = Field(default=None)
+class Event(SQLModel,table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    organiser: str = Field(foreign_key="user.username",nullable=False)
+    event_name: str = Field(nullable=False)
+    event_description: str = Field(nullable=False)
+    start_date: datetime = Field(nullable=False)
+    end_date: datetime = Field(nullable=False)
+    category: str = Field(nullable=False)
+    registration_start: datetime = Field(nullable=False)
+    registration_end: datetime = Field(nullable=False)
+    address: str = Field(nullable=False)
+    city: str = Field(nullable=False)
+    state: str = Field(nullable=False)
+    img_url: str = Field(nullable=False)
 
 
-# class UserInDB(SQLModel, table=True):
-#     __tablename__ = "users"  # type: ignore
-#     id: int | None = Field(default=None, primary_key=True)
-#     username: str = Field(index=True, unique=True)
-#     email: str = Field(index=True)
-#     full_name: str
-#     disabled: bool = Field(default=False)
-#     hashed_password: str
+class EventUpdate(Event):
+    id: int | None = Field(default=None, primary_key=True)
+    organiser: str = Field(foreign_key="user.username",nullable=False)
+    event_name: str = Field(nullable=False)
+    event_description: str = Field(nullable=False)
+    start_date: datetime = Field(nullable=False)
+    end_date: datetime = Field(nullable=False)
+    category: str = Field(nullable=False)
+    registration_start: datetime = Field(nullable=False)
+    registration_end: datetime = Field(nullable=False)
+    address: str = Field(nullable=False)
+    city: str = Field(nullable=False)
+    state: str = Field(nullable=False)
+    img_url: str = Field(nullable=False)
+
