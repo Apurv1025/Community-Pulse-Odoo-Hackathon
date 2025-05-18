@@ -146,7 +146,9 @@ async def create_event(
            address=event.address,
            city=event.city,
            state=event.state,
-           img_url=event.img_url
+           img_url=event.img_url,
+           isAccepted=False,
+            isRejected=False,
        )
        session.add(db_event)
        session.commit()
@@ -181,6 +183,7 @@ async def update_event(
 ):
     """
     Update an event. Only provided fields will be updated.
+    If the event does not exist, no changes are made and a 404 is returned.
     """
     with Session(engine) as session:
         db_event = session.get(Event, event_id)
@@ -189,6 +192,8 @@ async def update_event(
         if db_event.organiser != current_user.username:
             raise HTTPException(status_code=403, detail="Not authorized to edit this event")
         event_data = event_update.model_dump(exclude_unset=True)
+        if not event_data:
+            return db_event  # No changes if no fields provided
         for key, value in event_data.items():
             setattr(db_event, key, value)
         session.add(db_event)
@@ -199,10 +204,91 @@ async def update_event(
 @app.get("/events/", response_model=list[Event])
 async def get_all_events():
     """
-    Retrieve all events from the database.
+    Retrieve all events from the database that are accepted.
     """
     with Session(engine) as session:
-        events = session.exec(select(Event)).all()
+        events = session.exec(select(Event).where(Event.isAccepted is True)).all()
         return events
+    
+
+@app.get("/events/{event_id}", response_model=Event)
+async def get_event(event_id: int):
+    """
+    Retrieve a specific event by its ID.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return db_event
 
 
+@app.delete("/events/delete/{event_id}", response_model=dict)
+async def delete_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Delete an event. Only the organiser can delete their event.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if db_event.organiser != current_user.username:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this event")
+        session.delete(db_event)
+        session.commit()
+        return {"detail": "Event deleted successfully"}
+    
+@app.get("/admin/event/accept/{event_id}", response_model=Event)
+async def accept_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Accept an event. Only admin can accept events.
+    """
+    if not current_user.isAdmin:
+        raise HTTPException(status_code=403, detail="Not authorized to accept this event")
+    
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        db_event.isAccepted = True
+        session.add(db_event)
+        session.commit()
+        session.refresh(db_event)
+        return db_event
+    
+@app.get("/admin/event/reject/{event_id}", response_model=Event)
+async def reject_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Reject an event. Only admin can reject events.
+    """
+    if not current_user.isAdmin:
+        raise HTTPException(status_code=403, detail="Not authorized to reject this event")
+    
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        db_event.isRejected = True
+        session.add(db_event)
+        session.commit()
+        session.refresh(db_event)
+        return db_event
+    
+@app.get("admin/requestevents", response_model=list[Event])
+async def get_all_request_events():
+    """
+    Retrieve all events from the database that are not accepted or rejected.
+    """
+    with Session(engine) as session:
+        events = session.exec(select(Event).where(Event.isAccepted == False, Event.isRejected == False)).all()
+        return events
+    

@@ -44,6 +44,8 @@ class Event(SQLModel,table=True):
     city: str = Field(nullable=False)
     state: str = Field(nullable=False)
     img_url: str = Field(nullable=False)
+    isAccepted: bool = Field(default=False)
+    isRejected: bool = Field(default=False)
 
 
 class EventUpdate(Event):
@@ -60,4 +62,6 @@ class EventUpdate(Event):
     city: str = Field(nullable=False)
     state: str = Field(nullable=False)
     img_url: str = Field(nullable=False)
+    isAccepted: bool = Field(default=False)
+    isRejected: bool = Field(default=False)
 
