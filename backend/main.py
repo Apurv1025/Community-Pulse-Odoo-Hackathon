@@ -312,14 +312,16 @@ async def reject_event(
         session.refresh(db_event)
         return db_event
     
-@app.get("/admin/requestevents", response_model=list[Event])
+@app.get("/admin/requestevents", response_model=list[EventResponse])
 async def get_all_request_events():
     """
     Retrieve all events from the database that are not accepted or rejected.
     """
     with Session(engine) as session:
-        events = session.exec(select(Event).where(Event.isAccepted == False, Event.isRejected == False)).all()
-        return events
+        events = session.exec(
+            select(Event).where(Event.isAccepted == False, Event.isRejected == False)
+        ).scalars().all()
+        return [EventResponse.from_orm(event) for event in events]
     
 @app.get("/admin/event/flag/{event_id}", response_model=Event)
 async def flag_event(
@@ -393,3 +395,4 @@ async def admin_search_users(
             )
         ).scalars().all()
         return [UserPublic.model_validate(user) for user in users]
+

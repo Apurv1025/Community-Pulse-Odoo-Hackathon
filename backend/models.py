@@ -67,3 +67,9 @@ class EventUpdate(Event):
     isRejected: bool = Field(default=False)
     isFlagged: bool = Field(default=False)
 
+class EventRegistered(SQLModel, table=True):
+    event_id: int = Field(foreign_key="event.id", primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username", primary_key=True, nullable=False)
+    email: str = Field(foreign_key="user.email", nullable=False)
+    phone: str = Field(foreign_key="user.phone", nullable=False)
+    count: int = Field(nullable=False)
