@@ -1,5 +1,4 @@
 <template>
-    here register for events {{ eventId }}
     <EventHeader :event_id="eventId" />
 </template>
 

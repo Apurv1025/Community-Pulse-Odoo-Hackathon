@@ -8,6 +8,9 @@
 
     </div>
     <div class="event-date-time" style="float:right">{{ event_date || 'Event Date' }}</div></div>
+    <div style="padding: 10px 0;">
+        {{ event_type || 'Event Type' }}
+    </div>
 
     
     <template #footer>
@@ -47,6 +50,10 @@ const props = defineProps({
     type: String,
     required: false,
     default: '#'
+  },
+  event_type:{
+    type:String,
+    required:false
   }
 
 

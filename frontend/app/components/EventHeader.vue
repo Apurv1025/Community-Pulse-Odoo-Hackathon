@@ -1,12 +1,8 @@
 <template>
-  <div class="image-header" :style="headerStyle">
-    <div class="header-overlay" :style="overlayStyle">
-      <div class="header-content">
+  <div class="image-header" >
         <h1 class="header-title">{{ event_id }}</h1>
         <slot></slot>
       </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
@@ -18,5 +14,7 @@ event_id:{
 </script>
 
 <style scoped>
-
+.image-header{
+    
+}
 </style>

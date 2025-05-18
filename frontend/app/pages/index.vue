@@ -9,6 +9,7 @@
       :event_date="event.date"
       :event_location="event.location"
       :event_url="event.url"
+      :event_type="event.event_type"
     />
   </div>
 </template>
@@ -21,21 +22,24 @@ const events = [
     name: 'Summer Music Festival',
     date: 'June 15, 2025',
     location: 'Central Park',
-    url: '/event/summer-music-festival'
+    url: '/event/summer-music-festival',
+    event_type: 'Music'
   },
   {
     id: 2,
     name: 'Tech Conference 2025',
     date: 'July 23, 2025',
     location: 'Convention Center',
-    url: '/event/tech-conference'
+    url: '/event/tech-conference',
+    event_type: 'Conference'
   },
   {
     id: 3,
     name: 'Food & Wine Expo',
     date: 'August 10, 2025',
     location: 'City Square',
-    url: '/event/food-wine-expo'
+    url: '/event/food-wine-expo',
+    event_type: 'Expo'
   }
 ]
 
