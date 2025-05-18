@@ -1,62 +1,92 @@
 <template>
-  this is ghomepage
+  <UContainer class="py-8">
+    <UCard class="w-full max-w-6xl mx-auto">
+      <template #header>
+        <div class="flex flex-col gap-1">
+          <h2 class="text-xl font-semibold">Community Events</h2>
+          <p class="text-sm text-gray-500">Discover events happening in your community</p>
+        </div>
+      </template>
 
-  <div class="events">
-    <EventCard 
-      v-for="event in events" 
-      :key="event.id"
-      :event_name="event.name"
-      :event_date="event.date"
-      :event_location="event.location"
-      :event_url="event.url"
-      :event_type="event.event_type"
-    />
-  </div>
+      <div v-if="loading" class="flex justify-center py-8">
+        <UButton loading variant="ghost" />
+      </div>
+
+      <div v-else-if="error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        {{ error }}
+      </div>
+
+      <div v-else-if="events.length === 0" class="text-center py-10">
+        <p class="text-gray-500 text-xl">No events available</p>
+      </div>
+
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4">
+        <EventCard v-for="event in events" :key="event.id" :event-name="event.event_name"
+          :event-date="formatDate(event.start_date)" :event-location="`${event.city}, ${event.state}`"
+          :event-img="event.img_url" :event-url="`/event/${event.id}`" :event-type="event.category"
+          :event-description="event.event_description" />
+      </div>
+    </UCard>
+  </UContainer>
 </template>
 
 <script setup>
-// Define an array of events with all required properties
-const events = [
-  {
-    id: 1,
-    name: 'Summer Music Festival',
-    date: 'June 15, 2025',
-    location: 'Central Park',
-    url: '/event/summer-music-festival',
-    event_type: 'Music'
-  },
-  {
-    id: 2,
-    name: 'Tech Conference 2025',
-    date: 'July 23, 2025',
-    location: 'Convention Center',
-    url: '/event/tech-conference',
-    event_type: 'Conference'
-  },
-  {
-    id: 3,
-    name: 'Food & Wine Expo',
-    date: 'August 10, 2025',
-    location: 'City Square',
-    url: '/event/food-wine-expo',
-    event_type: 'Expo'
+import { useAuthStore } from "../../stores/authStore";
+import EventCard from "../components/EventCard.vue";
+
+const store = useAuthStore();
+const config = useRuntimeConfig();
+const toast = useToast();
+
+const events = ref([]);
+const loading = ref(true);
+const error = ref(null);
+
+// Load events when the component is mounted
+onMounted(async () => {
+  await fetchEvents();
+});
+
+// Fetch events from the backend
+const fetchEvents = async () => {
+  loading.value = true;
+  error.value = null;
+
+  try {
+    const response = await fetch(`${config.public.backendUrl}/events/`, {
+      headers: {
+        'Authorization': `Bearer ${store.session}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events: ${response.status}`);
+    }
+
+    events.value = await response.json();
+  } catch (err) {
+    console.error('Error fetching events:', err);
+    error.value = 'Failed to load events. Please try again later.';
+    toast.add({
+      title: 'Error',
+      description: error.value,
+      color: 'error'
+    });
+  } finally {
+    loading.value = false;
   }
-]
+};
 
-// If you need to fetch events from an API:
-// const { data: events } = await useFetch('/api/events')
-
-// Or if you want to use computed properties:
-// const featuredEvents = computed(() => {
-//   return events.filter(event => event.isFeatured)
-// })
+// Format date for display
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'TBD';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
 </script>
-
-<style>
-.events {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 20px;
-}
-</style>

@@ -1,61 +1,78 @@
 <template>
-    <div class="event-card">
-    <UCard>
-    <Placeholder class="h-40 mb-4" /> <!-- Image placeholder -->
-    <div class="name-date" style="display:flex">
-    <div class="event-name" style="float:left;padding-right: 60px;">
-       <NuxtLink :to="event_url" class="event-link">{{ event_name || 'Event Name' }}</NuxtLink>
-
-    </div>
-    <div class="event-date-time" style="float:right">{{ event_date || 'Event Date' }}</div></div>
-    <div style="padding: 10px 0;">
-        {{ event_type || 'Event Type' }}
+  <UCard class="event-card">
+    <!-- Top Image -->
+    <img v-if="eventImg" :src="eventImg" :alt="eventName" class="w-full h-48 object-cover rounded-t-md mb-4">
+    <div v-else class="w-full h-48 bg-gray-200 rounded-t-md mb-4 flex items-center justify-center">
+      <UIcon name="i-lucide-image" class="w-10 h-10 text-gray-400" />
     </div>
 
-    
-    <template #footer>
+    <!-- Event Title -->
+    <h3 class="text-lg font-semibold mb-2">
+      <NuxtLink :to="eventUrl" class="hover:text-primary">{{ eventName }}</NuxtLink>
+    </h3>
 
-        <div class="footer" style="display:flex;">
-       <UIcon name="mdi-light:map-marker" class="size-5" />
-       <div style="padding-left: 10px;font-size: medium ;">{{ event_location || 'Event Location'}}</div></div>
-       
-    </template>
-  </UCard></div>
+    <!-- Event Details -->
+    <div class="text-sm text-gray-500 mb-3">
+      <div class="flex items-center gap-1 mb-1">
+        <UIcon name="i-lucide-calendar" class="w-4 h-4" />
+        <span>{{ eventDate }}</span>
+      </div>
+      <div class="flex items-center gap-1 mb-1">
+        <UIcon name="i-lucide-tag" class="w-4 h-4" />
+        <span>{{ eventType }}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <UIcon name="i-lucide-map-pin" class="w-4 h-4" />
+        <span>{{ eventLocation }}</span>
+      </div>
+    </div>
+
+    <!-- Event Description (if provided) -->
+    <p v-if="eventDescription" class="text-gray-700 mb-4 line-clamp-3">{{ eventDescription }}</p>
+  </UCard>
 </template>
 
-<style>
+<style scoped>
 .event-card {
   width: 100%;
-  max-width: 300px;
-  margin: 0 auto;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
+.event-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
 </style>
 
 <script setup>
-const props = defineProps({
-  event_name: {
+defineProps({
+  eventName: {
     type: String,
-    required: false
+    default: 'Event Name'
   },
-  event_date: {
+  eventDate: {
     type: String,
-    required: false
+    default: 'Event Date'
   },
-    event_location: {
-        type: String,
-        required: false
-    },
-    event_url: {
+  eventLocation: {
     type: String,
-    required: false,
+    default: 'Event Location'
+  },
+  eventImg: {
+    type: String,
+    default: ''
+  },
+  eventUrl: {
+    type: String,
     default: '#'
   },
-  event_type:{
-    type:String,
-    required:false
+  eventType: {
+    type: String,
+    default: 'Event Type'
+  },
+  eventDescription: {
+    type: String,
+    default: ''
   }
-
-
-})
+});
 </script>
