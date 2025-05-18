@@ -18,6 +18,9 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 
+
+from sqlalchemy import select, or_, and_, func
+
 app = FastAPI()
 
 # Add CORS middleware
@@ -149,6 +152,7 @@ async def create_event(
            img_url=event.img_url,
            isAccepted=False,
             isRejected=False,
+            isFlagged=False,
        )
        session.add(db_event)
        session.commit()
@@ -201,14 +205,39 @@ async def update_event(
         session.refresh(db_event)
         return db_event
 
-@app.get("/events/", response_model=list[Event])
+class EventResponse(BaseModel):
+    id: int
+    organiser: str
+    event_name: str
+    event_description: str
+    start_date: datetime
+    end_date: datetime
+    category: str
+    registration_start: datetime
+    registration_end: datetime
+    address: str
+    city: str
+    state: str
+    img_url: str
+    isAccepted: bool
+    isRejected: bool
+    isFlagged: bool
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+@app.get("/events/", response_model=list[EventResponse])
 async def get_all_events():
-    """
-    Retrieve all events from the database that are accepted.
-    """
-    with Session(engine) as session:
-        events = session.exec(select(Event).where(Event.isAccepted is True)).all()
-        return events
+   """
+   Retrieve all events from the database that are accepted and not flagged.
+   """
+   with Session(engine) as session:
+        events = session.exec(
+    select(Event).where(Event.isAccepted == True, Event.isFlagged == False)
+).scalars().all()
+        # Convert ORM objects to Pydantic models
+        return [EventResponse.from_orm(event) for event in events]
     
 
 @app.get("/event/{event_id}", response_model=Event)
@@ -283,7 +312,7 @@ async def reject_event(
         session.refresh(db_event)
         return db_event
     
-@app.get("admin/requestevents", response_model=list[Event])
+@app.get("/admin/requestevents", response_model=list[Event])
 async def get_all_request_events():
     """
     Retrieve all events from the database that are not accepted or rejected.
@@ -292,3 +321,75 @@ async def get_all_request_events():
         events = session.exec(select(Event).where(Event.isAccepted == False, Event.isRejected == False)).all()
         return events
     
+@app.get("/admin/event/flag/{event_id}", response_model=Event)
+async def flag_event(
+   event_id: int,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Reject an event. Only admin can reject events.
+   """
+   if not current_user.isAdmin:
+       raise HTTPException(status_code=403, detail="Not authorized to Flag this event")
+  
+   with Session(engine) as session:
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           raise HTTPException(status_code=404, detail="Event not found")
+       db_event.isFlagged = True
+       session.add(db_event)
+       session.commit()
+       session.refresh(db_event)
+       return db_event
+
+
+@app.get("/event/user/{username}", response_model=list[Event])
+async def get_user_events(username: str):
+    """
+    Retrieve all accepted events created by a specific user.
+    """
+    with Session(engine) as session:
+        events = session.exec(
+            select(Event).where(
+                Event.organiser == username,
+                Event.isAccepted == True,
+                Event.isFlagged == False
+            )
+        ).scalars().all()
+        return events
+
+@app.get("/search/{searchterm}", response_model=list[Event])
+async def search_events(searchterm: str):
+    """
+    Search for accepted events by event name (case-insensitive, partial match).
+    """
+    with Session(engine) as session:
+        events = session.exec(
+            select(Event).where(
+                Event.isAccepted == True,
+                Event.isFlagged == False,
+                func.lower(Event.event_name).contains(searchterm.lower())
+            )
+        ).scalars().all()
+        return events
+    
+@app.get("/admin/usersearch/{searchterm}", response_model=list[UserPublic])
+async def admin_search_users(
+    searchterm: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Admin search for users by username or email (case-insensitive, partial match).
+    """
+    if not current_user.isAdmin:
+        raise HTTPException(status_code=403, detail="Not authorized to search users")
+    with Session(engine) as session:
+        users = session.exec(
+            select(User).where(
+                or_(
+                    func.lower(User.username).contains(searchterm.lower()),
+                    func.lower(User.email).contains(searchterm.lower())
+                )
+            )
+        ).scalars().all()
+        return [UserPublic.model_validate(user) for user in users]

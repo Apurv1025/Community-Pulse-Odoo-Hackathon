@@ -46,6 +46,7 @@ class Event(SQLModel,table=True):
     img_url: str = Field(nullable=False)
     isAccepted: bool = Field(default=False)
     isRejected: bool = Field(default=False)
+    isFlagged: bool = Field(default=False)
 
 
 class EventUpdate(Event):
@@ -64,4 +65,5 @@ class EventUpdate(Event):
     img_url: str = Field(nullable=False)
     isAccepted: bool = Field(default=False)
     isRejected: bool = Field(default=False)
+    isFlagged: bool = Field(default=False)
 
