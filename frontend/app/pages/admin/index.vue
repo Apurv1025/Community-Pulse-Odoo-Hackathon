@@ -1,36 +1,41 @@
 <template>
-    <UContainer class="py-8">
-        <UCard class="w-full max-w-6xl mx-auto">
-            <template #header>
-                <div class="flex flex-col gap-1">
-                    <h2 class="text-xl font-semibold">Admin Dashboard</h2>
-                    <p class="text-sm text-gray-500">Manage event requests</p>
+    <div>
+        <AdminNavbar />
+        <UContainer class="py-8">
+            <UCard class="w-full max-w-6xl mx-auto">
+                <template #header>
+                    <div class="flex flex-col gap-1">
+                        <h2 class="text-xl font-semibold">Admin Dashboard</h2>
+                        <p class="text-sm text-gray-500">Manage event requests</p>
+                    </div>
+                </template>
+
+                <div v-if="loading" class="flex justify-center py-8">
+                    <UButton loading variant="ghost" />
                 </div>
-            </template>
 
-            <div v-if="loading" class="flex justify-center py-8">
-                <UButton loading variant="ghost" />
-            </div>
+                <div v-else-if="error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    {{ error }}
+                </div>
 
-            <div v-else-if="error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                {{ error }}
-            </div>
+                <div v-else-if="events.length === 0" class="text-center py-10">
+                    <p class="text-gray-500 text-xl">No pending event requests</p>
+                </div>
 
-            <div v-else-if="events.length === 0" class="text-center py-10">
-                <p class="text-gray-500 text-xl">No pending event requests</p>
-            </div>
-
-            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4">
-                <AdminEventCard v-for="event in events" :key="event.id" :event="event" @approve="approveEvent"
-                    @reject="rejectEvent" @flag="flagEvent" />
-            </div>
-        </UCard>
-    </UContainer>
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4">
+                    <AdminEventCard v-for="event in events" :key="event.id" :event="event" @approve="approveEvent"
+                        @reject="rejectEvent" @flag="flagEvent" />
+                </div>
+            </UCard>
+        </UContainer>
+    </div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue';
 import { useAuthStore } from "../../../stores/authStore";
 import AdminEventCard from "../../components/AdminEventCard.vue";
+import AdminNavbar from "../../components/AdminNavbar.vue";
 
 const store = useAuthStore();
 const config = useRuntimeConfig();
