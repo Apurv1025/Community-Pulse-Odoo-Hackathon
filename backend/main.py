@@ -110,13 +110,6 @@ async def read_users_me(
 ):
     return current_user
 
-
-@app.get("/users/me/items/")
-async def read_own_items(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-):
-    return [{"item_id": "Foo", "owner": current_user.username}]
-
 class EventCreate(BaseModel):
    event_name: str
    event_description: str
@@ -396,3 +389,50 @@ async def admin_search_users(
         ).scalars().all()
         return [UserPublic.model_validate(user) for user in users]
 
+class EventRegister(BaseModel):
+    count: int
+
+@app.post("/event/{event_id}/register", response_model=dict)
+async def register_user_to_event(
+    registration: EventRegister,
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Register the current user to an event using the EventRegistered DB model.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event,event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        event_registration = EventRegistered(
+            username=current_user.username,
+            event_id=event_id,
+            email= current_user.email,
+            phone= current_user.phone,
+            count= registration.count
+        )
+        session.add(event_registration)
+        session.commit()
+        return {"detail": "User registered to event successfully"}
+    
+@app.get("/event/{event_id}/registered", response_model=dict)
+async def is_user_registered_for_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Check if the current user is registered for a specific event.
+    Returns {"registered": True} or {"registered": False}
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        registration = session.exec(
+            select(EventRegistered).where(
+                EventRegistered.event_id == event_id,
+                EventRegistered.username == current_user.username
+            )
+        ).first()
+        return {"registered": registration is not None}
