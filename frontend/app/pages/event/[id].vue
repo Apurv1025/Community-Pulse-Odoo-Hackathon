@@ -102,7 +102,7 @@
                             </template>
 
                             <!-- Attendee Count Dialog -->
-                            <UModal v-model="showCountDialog" :ui="{ width: 'sm', container: 'XL' }"
+                            <UModal v-model="showCountDialog" class="mt-4" :ui="{ width: 'sm', container: 'XL' }"
                                 :prevent-close="true" @close="showCountDialog = false">
                                 <UCard v-if="showCountDialog" @click.stop>
                                     <template #header>
@@ -141,7 +141,8 @@
                             </UButton>
 
                             <!-- Delete Confirmation Modal -->
-                            <UModal v-if="showDeleteModal" v-model="showDeleteModal" :ui="{ container: 'body' }">
+                            <UModal v-if="showDeleteModal" class="mt-4" v-model="showDeleteModal"
+                                :ui="{ container: 'body' }">
                                 <UCard class="w-full max-w-md">
                                     <template #header>
                                         <div class="flex items-center">
@@ -178,6 +179,16 @@
                                     </template>
                                 </UCard>
                             </UModal>
+
+
+                            <LMap class="mt-4 rounded-2xl" style="height: 350px" :zoom="6" :center="latLong"
+                                :use-global-leaflet="false">
+                                <LTileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution="&amp;copy; <a href=&quot;https://www.openstreetmap.org/&quot;>OpenStreetMap</a> contributors"
+                                    layer-type="base" name="OpenStreetMap" />
+                                <LMarker :lat-lng="latLong" />
+                            </LMap>
+
                         </div>
                     </UCard>
                 </div>
@@ -217,6 +228,7 @@ const attendeeCount = ref(1);
 const showCountDialog = ref(false);
 const showDeleteModal = ref(false);
 const organizerDetails = ref(null);
+let latLong = ref([19.091651970649906, 72.86280672834073]); // Default coordinates for Mumbai
 const isOrganizer = computed(() =>
     authStore.user && event.value && authStore.user.username === event.value.organiser
 );

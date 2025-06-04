@@ -1,6 +1,6 @@
 <template>
     <div>
-        <Navbar v-if="!isAdminRoute" />
+        <Navbar v-if="!isAdminRoute && !isLoginRoute" />
         <slot />
     </div>
 </template>
@@ -15,4 +15,8 @@ const route = useRoute();
 const isAdminRoute = computed(() => {
     return route.path.startsWith('/admin');
 });
+
+const isLoginRoute = computed(() => {
+    return route.path.startsWith("/login")
+})
 </script>

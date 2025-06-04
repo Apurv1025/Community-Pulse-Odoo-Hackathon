@@ -1,41 +1,56 @@
 <template>
-    <nav class="bg-gray-800 p-4">
+    <nav class="bg-white shadow-md p-4 dark:bg-gray-800">
         <div class="container mx-auto">
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <!-- Left section with logo/brand -->
                 <div class="flex items-center mb-4 md:mb-0">
-                    <NuxtLink to="/" class="text-white text-xl font-bold">Community Pulse</NuxtLink>
+                    <NuxtLink to="/" class="text-primary dark:text-white text-xl font-bold flex items-center">
+                        <UIcon name="i-lucide-pulse" class="w-6 h-6 mr-2" />
+                        Community Pulse
+                    </NuxtLink>
                 </div>
 
                 <!-- Middle section with search -->
                 <div class="w-full md:w-1/3 mb-4 md:mb-0">
                     <form class="flex" @submit.prevent="searchEvents">
-                        <input v-model="searchTerm" type="text" placeholder="Search events..."
-                            class="w-full px-4 py-2 rounded-l focus:outline-none">
-                        <button type="submit"
-                            class="bg-blue-500 text-white px-4 py-2 rounded-r hover:bg-blue-600 focus:outline-none">
-                            Search
-                        </button>
+                        <div class="flex w-full items-center">
+                            <UInput v-model="searchTerm" placeholder="Search events..." class="rounded-l-md w-full" />
+                            <UButton type="submit" icon="i-lucide-search" color="primary" class="rounded-r-md h-full">
+                                Search
+                            </UButton>
+                        </div>
                     </form>
                 </div>
 
-                <!-- Right section with event actions and logout -->
+                <!-- Right section with nav actions -->
                 <div class="flex items-center space-x-4">
+                    <!-- Create Event button visible only to logged-in users -->
+                    <UButton v-if="authStore.user" to="/event/create" icon="i-lucide-calendar-plus" class="mr-2"
+                        color="primary" variant="soft">
+                        Create Event
+                    </UButton>
+
                     <!-- Conditional Update/Delete links for event organizers -->
                     <template v-if="showEventControls">
-                        <NuxtLink :to="`/event/${currentEventId}/update`" class="text-white hover:text-blue-300">
-                            Update
+                        <NuxtLink :to="`/event/${currentEventId}/update`"
+                            class="text-primary hover:text-blue-700 dark:text-white dark:hover:text-blue-300">
+                            <UIcon name="i-lucide-edit" class="w-5 h-5" />
+                            <span class="hidden sm:inline ml-1">Update</span>
                         </NuxtLink>
-                        <button class="text-white hover:text-red-300" @click="deleteEvent">
-                            Delete
+                        <button class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                            @click="deleteEvent">
+                            <UIcon name="i-lucide-trash-2" class="w-5 h-5" />
+                            <span class="hidden sm:inline ml-1">Delete</span>
                         </button>
                     </template>
 
                     <!-- Logout button -->
-                    <button class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 focus:outline-none"
-                        @click="logout">
-                        Logout
-                    </button>
+                    <UButton v-if="authStore.user" color="error" variant="soft" icon="i-lucide-log-out" @click="logout">
+                        <span class="hidden sm:inline">Logout</span>
+                    </UButton>
+                    <UButton v-else to="/login" color="primary" variant="soft" icon="i-lucide-log-in">
+                        <span class="hidden sm:inline">Login</span>
+                    </UButton>
                 </div>
             </div>
         </div>
@@ -109,7 +124,10 @@ const showEventControls = computed(() => {
 // Search events
 function searchEvents() {
     if (searchTerm.value.trim()) {
-        router.push(`/search/${encodeURIComponent(searchTerm.value.trim())}`);
+        router.push({
+            path: `/search/${encodeURIComponent(searchTerm.value.trim())}`,
+            query: { q: searchTerm.value.trim() }
+        });
     }
 }
 
@@ -142,8 +160,8 @@ async function deleteEvent() {
 }
 
 // Logout user
-function logout() {
-    authStore.deleteUserSession();
+async function logout() {
+    await authStore.deleteUserSession();
     router.push('/login');
 }
 </script>

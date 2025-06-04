@@ -41,8 +41,9 @@ const login = async () => {
     toast.add({
       title: 'Success',
       description: 'You have been logged in successfully',
-      color: 'green'
+      color: 'success'
     })
+    console.log(store.user)
     router.push('/')
   } catch (error: Error | unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Login failed. Please try again.';
@@ -50,7 +51,7 @@ const login = async () => {
     toast.add({
       title: 'Login failed',
       description: state.loginError,
-      color: 'red'
+      color: 'error'
     })
   } finally {
     state.isLoading = false
@@ -66,7 +67,7 @@ const register = async () => {
     toast.add({
       title: 'Success',
       description: 'Registration successful! You are now logged in.',
-      color: 'green'
+      color: 'success'
     })
     router.push('/')
   } catch (error: Error | unknown) {
@@ -75,7 +76,7 @@ const register = async () => {
     toast.add({
       title: 'Registration failed',
       description: state.registerError,
-      color: 'red'
+      color: 'error'
     })
   } finally {
     state.isLoading = false

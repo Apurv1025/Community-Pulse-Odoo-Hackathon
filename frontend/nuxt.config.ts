@@ -23,6 +23,7 @@ export default defineNuxtConfig({
       },
     ],
     "pinia-plugin-persistedstate/nuxt",
+    "@nuxtjs/leaflet",
   ],
   imports: {
     dirs: ["stores"],
