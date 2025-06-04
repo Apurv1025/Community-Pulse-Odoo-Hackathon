@@ -43,10 +43,11 @@ class Event(SQLModel,table=True):
     address: str = Field(nullable=False)
     city: str = Field(nullable=False)
     state: str = Field(nullable=False)
-    img_url: str = Field(nullable=False)
     isAccepted: bool = Field(default=False)
     isRejected: bool = Field(default=False)
     isFlagged: bool = Field(default=False)
+    latitude: float | None = Field(default=None, nullable=True)
+    longitude: float | None = Field(default=None, nullable=True)
 
 
 class EventUpdate(Event):
@@ -62,10 +63,11 @@ class EventUpdate(Event):
     address: str = Field(nullable=False)
     city: str = Field(nullable=False)
     state: str = Field(nullable=False)
-    img_url: str = Field(nullable=False)
     isAccepted: bool = Field(default=False)
     isRejected: bool = Field(default=False)
     isFlagged: bool = Field(default=False)
+    latitude: float | None = Field(default=None, nullable=True)
+    longitude: float | None = Field(default=None, nullable=True)
 
 class EventRegistered(SQLModel, table=True):
     event_id: int = Field(foreign_key="event.id", primary_key=True, nullable=False)

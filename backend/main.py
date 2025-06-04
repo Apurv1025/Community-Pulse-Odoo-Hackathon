@@ -3,7 +3,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from backend.models import Event , UploadEvent
+from backend.models import Event ,UploadEvent
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
@@ -11,9 +11,11 @@ from typing import Optional
 from backend.models import *
 from backend.utils.auth import *
 from backend.utils.db import *
-from backend.email_reminder import send_event_notifications
+from backend.email_reminder import send_event_notifications,schedule_for_specific_date
 
 load_dotenv()
+
+import schedule
 
 from fastapi import Depends, FastAPI, HTTPException, status,UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
@@ -22,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import select, or_, and_, func
 
+from backend.email_reminder import send_event_notifications
 # import threading
 # from backend.scheduler import run_scheduler
 
@@ -36,6 +39,27 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+
+# schedule_for_specific_date(
+#         target_date='2025-06-05',
+#         target_time="19:27",
+#         recipient='rashinkarapurv@gmail.com',
+#         event_name="this event",
+#         event_details={
+#             "start_time": "10:00 AM",
+#             "address": "123 Main St",
+#             "city": "Springfield",
+#             "state": "IL"
+#         })
+
+# send_event_notifications(
+#     recipient='rashinkarapurv@gmail.com',
+#     event_name="Test Event",
+#     event_details={
+#         "start_time": "10:00 AM",
+#         "address": "123 Main St",
+#         "city": "Springfield",
+#          "state": "IL"})
 
 @app.on_event("startup")
 def on_startup():
@@ -125,7 +149,8 @@ class EventCreate(BaseModel):
    address: str
    city: str
    state: str
-   img_url: str
+   latitude: float   # Optional latitude
+   longitude : float
 
 
 @app.post("/event/create", response_model=Event)
@@ -146,10 +171,11 @@ async def create_event(
            address=event.address,
            city=event.city,
            state=event.state,
-           img_url=event.img_url,
            isAccepted=False,
             isRejected=False,
             isFlagged=False,
+            latitude=event.latitude,
+            longitude=event.longitude
        )
        session.add(db_event)
        session.commit()
@@ -174,7 +200,6 @@ class EventUpdateModel(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    img_url: Optional[str] = None
 
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
@@ -215,10 +240,11 @@ class EventResponse(BaseModel):
     address: str
     city: str
     state: str
-    img_url: str
     isAccepted: bool
     isRejected: bool
     isFlagged: bool
+    latitude : float
+    longitude : float
 
     class Config:
         orm_mode = True
@@ -237,17 +263,28 @@ async def get_all_events():
         return [EventResponse.from_orm(event) for event in events]
     
 
-@app.get("/event/{event_id}", response_model=Event)
+@app.get("/event/{event_id}", response_model=dict)
 async def get_event(event_id: int):
     """
-    Retrieve a specific event by its ID.
+    Retrieve a specific event by its ID, along with the list of images posted for the event.
     """
     with Session(engine) as session:
         db_event = session.get(Event, event_id)
         if not db_event:
             raise HTTPException(status_code=404, detail="Event not found")
-        return db_event
-
+        
+        # Fetch images for this event
+        images = session.exec(
+            select(UploadEvent).where(UploadEvent.event_id == event_id)
+        ).scalars().all()
+        image_filenames = [img.filename for img in images]
+        
+        # Convert Event object to dictionary
+        from fastapi.encoders import jsonable_encoder
+        event_dict = jsonable_encoder(db_event)
+        
+        # Return event data and image filenames
+        return {"event": event_dict, "images": image_filenames}
 
 @app.delete("/event/delete/{event_id}", response_model=dict)
 async def delete_event(
@@ -418,7 +455,23 @@ async def register_user_to_event(
         )
         session.add(event_registration)
         session.commit()
-        return {"detail": "User registered to event successfully"}
+
+        
+        # Schedule notification for 1 day before the event
+    # notification_date = db_event.start_date - timedelta(days=1)
+    # schedule_for_specific_date(
+    #     target_date=notification_date,
+    #     target_time="08:00",
+    #     recipient=current_user.email,
+    #     event_name=db_event.event_name,
+    #     event_details={
+    #         "start_time": db_event.start_date.strftime("%I:%M %p"),
+    #         "address": db_event.address,
+    #         "city": db_event.city,
+    #         "state": db_event.state
+    #     })
+
+    return {"detail": "User registered to event successfully"}
     
 @app.get("/event/{event_id}/registered", response_model=dict)
 async def is_user_registered_for_event(
@@ -441,6 +494,7 @@ async def is_user_registered_for_event(
         ).first()
         return {"registered": registration is not None}
     
+
 @app.post("/event/{event_id}/upload")
 async def upload_file(
     file: UploadFile,
@@ -485,6 +539,8 @@ async def upload_file(
         "content_type": file.content_type,
         "size": len(content),
     }
+
+
 
 @app.get("/event/{event_id}/organizer",response_model=UserBase)
 async def get_event_organizer(event_id: int):
