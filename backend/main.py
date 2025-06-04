@@ -3,7 +3,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from backend.models import Event 
+from backend.models import Event , UploadEvent
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
@@ -14,7 +14,7 @@ from backend.utils.db import *
 
 load_dotenv()
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status,UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -436,3 +436,48 @@ async def is_user_registered_for_event(
             )
         ).first()
         return {"registered": registration is not None}
+    
+@app.post("/event/{event_id}/upload")
+async def upload_file(
+    file: UploadFile,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: SessionDep,
+    event_id: int,
+):
+    # check if it is a file
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided",
+        )
+    if not file.filename.endswith((".png", ".jpg", ".jpeg", ".gif")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type",
+        )
+
+    content = await file.read()
+    filename = (
+        current_user.username
+        + "_"
+        + datetime.now().strftime("%Y%m%d_%H%M%S")
+        + "_"
+        + file.filename
+    )
+    with open("uploads/" + filename, "wb") as f:
+        f.write(content)
+
+    upload = UploadEvent(
+        filename=filename,
+        content_type=file.content_type,  # type: ignore
+        size=len(content),
+        event_id=event_id,
+    )
+    session.add(upload)
+    session.commit()
+
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(content),
+    }

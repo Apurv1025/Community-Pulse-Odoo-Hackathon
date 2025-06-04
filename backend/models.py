@@ -73,3 +73,10 @@ class EventRegistered(SQLModel, table=True):
     email: str = Field(foreign_key="user.email", nullable=False)
     phone: str = Field(foreign_key="user.phone", nullable=False)
     count: int = Field(nullable=False)
+
+class UploadEvent(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    filename: str = Field(nullable=False)
+    content_type: str = Field(nullable=False)
+    size: int = Field(nullable=False)
+    event_id: str = Field(foreign_key="event.id", nullable=False)
