@@ -1,6 +1,6 @@
 <template>
   <div class="image-header" >
-        <h1 class="header-title">{{ event_id }}</h1>
+        <!-- <h1 class="header-title">{{ event_id }}</h1> -->
         <slot></slot>
       </div>
 </template>
