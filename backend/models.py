@@ -50,6 +50,7 @@ class Event(SQLModel,table=True):
     longitude: float | None = Field(default=None, nullable=True)
     total_views: int = Field(default=0, nullable=False)
     max_capacity: int = Field(default=0, nullable=False)
+    type: str = Field( default="free",nullable=False)  #free or paid
 
 
 class EventUpdate(Event):
@@ -85,3 +86,48 @@ class UploadEvent(SQLModel, table=True):
     content_type: str = Field(nullable=False)
     size: int = Field(nullable=False)
     event_id: str = Field(foreign_key="event.id", nullable=False)
+
+class EventUpvotes(SQLModel, table=True):
+    event_id: int = Field(foreign_key="event.id", primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username", primary_key=True, nullable=False)
+    
+class EventFollowing(SQLModel, table=True):
+    event_id: int = Field(foreign_key="event.id", primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username", primary_key=True, nullable=False)
+
+class EventTiers(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    event_id: int = Field(foreign_key="event.id", nullable=False)
+    tier_name: str = Field(nullable=False)
+    tier_price: float = Field(nullable=False)
+    quantity: int = Field(nullable=False)
+
+class UserEventTickets(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    username: str = Field(foreign_key="user.username", nullable=False)
+    tier_id: int = Field(foreign_key="eventtiers.id", nullable=False)
+    quantity: int = Field(nullable=False)
+    price: float = Field(nullable=False)
+
+class QuickFeedback(SQLModel, table=True):
+    event_id: int = Field(foreign_key="event.id",primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username",primary_key=True, nullable=False)
+    feedback: str = Field(nullable=False)
+
+class Issue(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    category: str = Field(nullable=False)
+    description: str = Field(nullable=False)
+    latitude: float | None = Field(default=None, nullable=True)
+    longitude: float | None = Field(default=None, nullable=True)
+    status: str = Field(default="open", nullable=False)
+    hidden: bool = Field(default=False, nullable=False)
+    personal: str = Field(nullable=False)
+
+class IssueSpam(SQLModel, table=True):
+    issue_id: int = Field(foreign_key="issue.id",primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username",primary_key=True, nullable=False)
+
+class IssueUpvotes(SQLModel, table=True):
+    issue_id: int = Field(foreign_key="issue.id", primary_key=True, nullable=False)
+    username: str = Field(foreign_key="user.username", primary_key=True, nullable=False)

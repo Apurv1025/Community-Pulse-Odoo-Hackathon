@@ -3,7 +3,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from backend.models import Event ,UploadEvent
+from backend.models import Event ,UploadEvent,EventUpvotes
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
@@ -566,4 +566,34 @@ async def get_event_organizer(event_id: int):
         if not organizer:
             raise HTTPException(status_code=404, detail="Organizer not found")
         return UserBase.model_validate(organizer)
+
+@app.post("/event/{event_id}/upvote", response_model=dict)
+async def upvote_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Upvote an event. If the user has already upvoted, it will not add a duplicate.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        # Check if the user has already upvoted
+        existing_upvote = session.exec(
+            select(EventUpvotes).where(
+                EventUpvotes.event_id == event_id,
+                EventUpvotes.username == current_user.username
+            )
+        ).first()
+        
+        if existing_upvote:
+            return {"detail": "Already upvoted"}
+        
+        new_upvote = EventUpvotes(event_id=event_id, username=current_user.username)
+        session.add(new_upvote)
+        session.commit()
+        
+        return {"detail": "Event upvoted successfully"}
 
