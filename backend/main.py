@@ -3,7 +3,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from backend.models import Event ,UploadEvent,EventUpvotes
+from backend.models import Event ,UploadEvent,EventUpvotes,EventFollowing
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
@@ -151,7 +151,8 @@ class EventCreate(BaseModel):
    state: str
    latitude: float   # Optional latitude
    longitude : float
-   max_capacity: int   # Default to 0 if not provided
+   max_capacity: int 
+   type: str  # Default to 0 if not provided
 
 @app.post("/event/create", response_model=Event)
 async def create_event(
@@ -176,7 +177,9 @@ async def create_event(
             isFlagged=False,
             latitude=event.latitude,
             longitude=event.longitude,
-            max_capacity=event.max_capacity
+            max_capacity=event.max_capacity,
+            type=event.type
+
        )
        session.add(db_event)
        session.commit()
@@ -597,3 +600,32 @@ async def upvote_event(
         
         return {"detail": "Event upvoted successfully"}
 
+@app.post("/event/{event_id}/follow", response_model=dict)
+async def follow_event(
+    event_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Follow an event. If the user has already followed, it will not add a duplicate.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        # Check if the user has already followed
+        existing_follow = session.exec(
+            select(EventFollowing).where(
+                EventFollowing.event_id == event_id,
+                EventFollowing.username == current_user.username
+            )
+        ).first()
+        
+        if existing_follow:
+            return {"detail": "Already following"}
+        
+        new_follow = Following(event_id=event_id, username=current_user.username)
+        session.add(new_follow)
+        session.commit()
+        
+        return {"detail": "Event followed successfully"}
