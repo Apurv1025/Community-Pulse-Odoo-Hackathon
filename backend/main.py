@@ -11,6 +11,7 @@ from typing import Optional
 from backend.models import *
 from backend.utils.auth import *
 from backend.utils.db import *
+from backend.email_reminder import send_event_notifications
 
 load_dotenv()
 
@@ -20,6 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 from sqlalchemy import select, or_, and_, func
+
+# import threading
+# from backend.scheduler import run_scheduler
 
 app = FastAPI()
 
@@ -481,3 +485,18 @@ async def upload_file(
         "content_type": file.content_type,
         "size": len(content),
     }
+
+@app.get("/event/{event_id}/organizer",response_model=UserBase)
+async def get_event_organizer(event_id: int):
+    """
+    Get the organizer of a specific event by event ID.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        organizer = session.get(User, db_event.organiser)
+        if not organizer:
+            raise HTTPException(status_code=404, detail="Organizer not found")
+        return UserBase.model_validate(organizer)
+
