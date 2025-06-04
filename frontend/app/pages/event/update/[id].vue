@@ -23,9 +23,12 @@ const state = reactive({
     city: '',
     state: '',
     img_url: '',
+    latitude: '',
+    longitude: '',
     error: '',
     isLoading: false,
-    fetchLoading: true
+    fetchLoading: true,
+    locationLoading: false
 });
 
 // Default categories list
@@ -51,8 +54,58 @@ const modifiedFields = reactive({
     address: false,
     city: false,
     state: false,
-    img_url: false
+    img_url: false,
+    latitude: false,
+    longitude: false
 });
+
+// Get user's current location
+const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+        toast.add({
+            title: 'Error',
+            description: 'Geolocation is not supported by your browser',
+            color: 'error'
+        });
+        return;
+    }
+
+    state.locationLoading = true;
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            state.latitude = position.coords.latitude.toString();
+            state.longitude = position.coords.longitude.toString();
+            modifiedFields.latitude = true;
+            modifiedFields.longitude = true;
+            state.locationLoading = false;
+            toast.add({
+                title: 'Success',
+                description: 'Location successfully captured',
+                color: 'success'
+            });
+        },
+        (error) => {
+            state.locationLoading = false;
+            let errorMsg = 'Failed to get your location';
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMsg = 'Location permission denied';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMsg = 'Location information unavailable';
+                    break;
+                case error.TIMEOUT:
+                    errorMsg = 'The request to get location timed out';
+                    break;
+            }
+            toast.add({
+                title: 'Error',
+                description: errorMsg,
+                color: 'error'
+            });
+        }
+    );
+};
 
 // Fetch the current event data
 const fetchEvent = async () => {
@@ -90,6 +143,8 @@ const fetchEvent = async () => {
         state.city = eventData.city || '';
         state.state = eventData.state || '';
         state.img_url = eventData.img_url || '';
+        state.latitude = eventData.latitude || '';
+        state.longitude = eventData.longitude || '';
 
     } catch (error) {
         console.error('Error fetching event:', error);
@@ -295,6 +350,23 @@ const updateEvent = async () => {
                             <UInput v-model="state.state" type="text" placeholder="State" class="w-full"
                                 @input="handleFieldChange('state')" />
                         </UFormField>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <UFormField label="Latitude" name="latitude">
+                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full"
+                                @input="handleFieldChange('latitude')" />
+                        </UFormField>
+
+                        <UFormField label="Longitude" name="longitude">
+                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full"
+                                @input="handleFieldChange('longitude')" />
+                        </UFormField>
+                    </div>
+
+                    <div class="flex justify-center mt-4">
+                        <UButton label="Get Current Location" type="button" variant="solid" color="secondary" size="xl"
+                            class="px-8" :loading="state.locationLoading" @click="getCurrentLocation" />
                     </div>
                 </div>
 

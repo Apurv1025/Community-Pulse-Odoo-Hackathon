@@ -18,8 +18,11 @@ const state = reactive({
     city: '',
     state: '',
     img_url: '',
+    latitude: '',
+    longitude: '',
     error: '',
-    isLoading: false
+    isLoading: false,
+    locationLoading: false
 });
 
 // Default categories list
@@ -33,7 +36,51 @@ const categories = ref([
     'Other'
 ]);
 
-// No category fetching, just use the default categories
+// Get user's current location
+const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+        toast.add({
+            title: 'Error',
+            description: 'Geolocation is not supported by your browser',
+            color: 'error'
+        });
+        return;
+    }
+
+    state.locationLoading = true;
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            state.latitude = position.coords.latitude.toString();
+            state.longitude = position.coords.longitude.toString();
+            state.locationLoading = false;
+            toast.add({
+                title: 'Success',
+                description: 'Location successfully captured',
+                color: 'success'
+            });
+        },
+        (error) => {
+            state.locationLoading = false;
+            let errorMsg = 'Failed to get your location';
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMsg = 'Location permission denied';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMsg = 'Location information unavailable';
+                    break;
+                case error.TIMEOUT:
+                    errorMsg = 'The request to get location timed out';
+                    break;
+            }
+            toast.add({
+                title: 'Error',
+                description: errorMsg,
+                color: 'error'
+            });
+        }
+    );
+};
 
 const createEvent = async () => {
     state.isLoading = true;
@@ -80,7 +127,9 @@ const createEvent = async () => {
             address: state.address,
             city: state.city,
             state: state.state,
-            img_url: state.img_url
+            img_url: state.img_url,
+            latitude: state.latitude || null,
+            longitude: state.longitude || null
         };
 
         console.log('Submitting event:', eventData);
@@ -199,6 +248,21 @@ const createEvent = async () => {
                         <UFormField label="State" name="state" required>
                             <UInput v-model="state.state" type="text" placeholder="State" class="w-full" required />
                         </UFormField>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <UFormField label="Latitude" name="latitude">
+                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full" />
+                        </UFormField>
+
+                        <UFormField label="Longitude" name="longitude">
+                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full" />
+                        </UFormField>
+                    </div>
+
+                    <div class="flex justify-center mt-4">
+                        <UButton label="Get Current Location" type="button" variant="solid" color="secondary" size="xl"
+                            class="px-8" :loading="state.locationLoading" @click="getCurrentLocation" />
                     </div>
                 </div>
 
