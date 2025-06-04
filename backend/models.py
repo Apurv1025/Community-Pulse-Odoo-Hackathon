@@ -48,6 +48,8 @@ class Event(SQLModel,table=True):
     isFlagged: bool = Field(default=False)
     latitude: float | None = Field(default=None, nullable=True)
     longitude: float | None = Field(default=None, nullable=True)
+    total_views: int = Field(default=0, nullable=False)
+    max_capacity: int = Field(default=0, nullable=False)
 
 
 class EventUpdate(Event):
@@ -68,6 +70,7 @@ class EventUpdate(Event):
     isFlagged: bool = Field(default=False)
     latitude: float | None = Field(default=None, nullable=True)
     longitude: float | None = Field(default=None, nullable=True)
+    max_capacity: int = Field(default=0, nullable=False)
 
 class EventRegistered(SQLModel, table=True):
     event_id: int = Field(foreign_key="event.id", primary_key=True, nullable=False)

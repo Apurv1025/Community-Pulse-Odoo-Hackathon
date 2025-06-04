@@ -151,7 +151,7 @@ class EventCreate(BaseModel):
    state: str
    latitude: float   # Optional latitude
    longitude : float
-
+   max_capacity: int   # Default to 0 if not provided
 
 @app.post("/event/create", response_model=Event)
 async def create_event(
@@ -175,7 +175,8 @@ async def create_event(
             isRejected=False,
             isFlagged=False,
             latitude=event.latitude,
-            longitude=event.longitude
+            longitude=event.longitude,
+            max_capacity=event.max_capacity
        )
        session.add(db_event)
        session.commit()
@@ -200,6 +201,9 @@ class EventUpdateModel(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    max_capacity: Optional[int] = None  # Optional max capacity field
 
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
@@ -245,6 +249,7 @@ class EventResponse(BaseModel):
     isFlagged: bool
     latitude : float
     longitude : float
+    max_capacity: int
 
     class Config:
         orm_mode = True
@@ -403,7 +408,6 @@ async def search_events(searchterm: str):
         events = session.exec(
             select(Event).where(
                 Event.isAccepted == True,
-                Event.isFlagged == False,
                 func.lower(Event.event_name).contains(searchterm.lower())
             )
         ).scalars().all()
@@ -542,15 +546,22 @@ async def upload_file(
 
 
 
-@app.get("/event/{event_id}/organizer",response_model=UserBase)
+@app.get("/event/{event_id}/organizer", response_model=UserBase)
 async def get_event_organizer(event_id: int):
     """
     Get the organizer of a specific event by event ID.
+    Also increments the event's total views by 1.
     """
     with Session(engine) as session:
         db_event = session.get(Event, event_id)
         if not db_event:
             raise HTTPException(status_code=404, detail="Event not found")
+        # Increment total views
+        if hasattr(db_event, "total_views"):
+            db_event.total_views = (db_event.total_views or 0) + 1
+            session.add(db_event)
+            session.commit()
+            session.refresh(db_event)
         organizer = session.get(User, db_event.organiser)
         if not organizer:
             raise HTTPException(status_code=404, detail="Organizer not found")
