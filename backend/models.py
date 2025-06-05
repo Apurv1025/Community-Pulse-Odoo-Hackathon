@@ -131,3 +131,10 @@ class IssueSpam(SQLModel, table=True):
 class IssueUpvotes(SQLModel, table=True):
     issue_id: int = Field(foreign_key="issue.id", primary_key=True, nullable=False)
     username: str = Field(foreign_key="user.username", primary_key=True, nullable=False)
+    
+class PendingTickets(SQLModel, table=True):
+    order_id: int = Field(default=None, primary_key=True)
+    username: str = Field(foreign_key="user.username", nullable=False)
+    tier_id: int = Field(foreign_key="eventtiers.id", nullable=False)
+    quantity: int = Field(nullable=False)
+    price: float = Field(nullable=False)
