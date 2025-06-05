@@ -6,6 +6,7 @@ export default defineNuxtConfig({
     public: {
       appUrl: "http://localhost:3000",
       backendUrl: "http://localhost:8000",
+      razorpayKey: "rzp_test_k19Yd58shg2QrK",
     },
   },
 
@@ -25,6 +26,7 @@ export default defineNuxtConfig({
     "pinia-plugin-persistedstate/nuxt",
     "@nuxtjs/leaflet",
   ],
+  plugins: ["~/plugins/razorpay.client.ts"],
   imports: {
     dirs: ["stores"],
   },

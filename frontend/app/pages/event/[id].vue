@@ -115,13 +115,76 @@
                             </div>
                             <template v-else>
                                 <UButton v-if="!isRegistered" block color="primary" class="mt-4"
-                                    @click="showCountDialog = true">
-                                    Register for Event
+                                    @click="handleRegistrationClick">
+                                    {{ event.type === 'paid' ? 'Buy Tickets' : 'Register for Event' }}
                                 </UButton>
                                 <UButton v-else block :color="eventStatusColor" disabled class="mt-4">
                                     {{ eventStatusText }}
                                 </UButton>
                             </template>
+
+                            <!-- Tier Selection Dialog for Paid Events -->
+                            <UModal v-model="showTierDialog" :ui="{ width: 'sm', container: 'XL' }" class="mt-4"
+                                :prevent-close="true" @close="showTierDialog = false">
+                                <UCard v-if="showTierDialog" @click.stop>
+                                    <template #header>
+                                        <div class="flex justify-between items-center">
+                                            <h3 class="text-base font-semibold leading-6">
+                                                Select Ticket Tier
+                                            </h3>
+                                        </div>
+                                    </template>
+                                    <div class="flex flex-col gap-4 py-4" @click.stop="$event.stopPropagation()">
+                                        <div v-if="tiers.length === 0" class="text-center text-gray-500">
+                                            No tickets available for this event
+                                        </div>
+                                        <div v-for="tier in tiers" :key="tier.id"
+                                            class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50"
+                                            :class="{ 'border-primary bg-primary-50': selectedTierId === tier.id }"
+                                            @click.stop="selectedTierId = tier.id">
+                                            <div class="flex items-center justify-between mb-2">
+                                                <div class="flex items-center gap-2">
+                                                    <input :id="`tier-${tier.id}`" v-model="selectedTierId" type="radio"
+                                                        :value="tier.id" class="text-primary" @click.stop>
+                                                    <label :for="`tier-${tier.id}`" class="font-medium">
+                                                        {{ tier.tier_name }}
+                                                    </label>
+                                                </div>
+                                                <span class="font-bold text-primary">₹{{ tier.tier_price }}</span>
+                                            </div>
+                                            <p class="text-sm text-gray-500 mb-2">{{ tier.description ||
+                                                'Standard ticket' }}</p>
+                                            <div class="flex items-center justify-between text-xs">
+                                                <span class="text-gray-400">{{ tier.leftover }} tickets left</span>
+                                                <span v-if="tier.max_tickets_per_person" class="text-gray-400">
+                                                    Max {{ tier.max_tickets_per_person }} per person
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div v-if="selectedTierId" class="mt-4">
+                                            <label class="block text-sm font-medium mb-2">Number of Tickets</label>
+                                            <UInput v-model="selectedQuantity" type="number" min="1"
+                                                :max="getMaxQuantityForTier(selectedTierId)" size="lg" class="w-full"
+                                                @click="handleInputClick" />
+                                            <div class="mt-2 text-sm text-gray-500">
+                                                Total: ₹{{ getTotalAmount() }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <template #footer>
+                                        <div class="flex justify-end gap-3">
+                                            <UButton color="gray" variant="ghost" @click="showTierDialog = false">
+                                                Cancel
+                                            </UButton>
+                                            <UButton color="primary" :loading="isPaymentProcessing"
+                                                :disabled="!selectedTierId || selectedQuantity < 1"
+                                                @click="initiatePayment">
+                                                Pay ₹{{ getTotalAmount() }}
+                                            </UButton>
+                                        </div>
+                                    </template>
+                                </UCard>
+                            </UModal>
 
                             <!-- Attendee Count Dialog -->
                             <UModal v-model="showCountDialog" :ui="{ width: 'sm', container: 'XL' }" class="mt-4"
@@ -253,6 +316,11 @@ const showCountDialog = ref(false);
 const showDeleteModal = ref(false);
 const organizerDetails = ref(null);
 const latLong = ref([19.091651970649906, 72.86280672834073]); // Default coordinates for Mumbai
+const tiers = ref([]);
+const selectedTierId = ref(null);
+const showTierDialog = ref(false);
+const isPaymentProcessing = ref(false);
+const selectedQuantity = ref(1);
 
 // Computed properties
 const isOrganizer = computed(() =>
@@ -361,6 +429,11 @@ const fetchEventDetails = async () => {
 
         // Fetch organizer details
         await fetchOrganizerDetails();
+
+        // If this is a paid event, fetch tiers
+        if (event.value.type === "paid") {
+            await fetchEventTiers();
+        }
     } catch (error) {
         console.error('Error fetching event:', error);
         toast.add({
@@ -396,6 +469,40 @@ const fetchOrganizerDetails = async () => {
                 phone: ''
             };
         }
+    }
+};
+
+// Fetch event tiers for paid events
+const fetchEventTiers = async () => {
+    try {
+        console.log('Fetching tiers for event:', eventId);
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/tiers`);
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Tiers response:', data);
+
+            if (data && Array.isArray(data) && data.length > 0) {
+                tiers.value = data.filter(tier => tier.leftover > 0); // Only show tiers with available tickets
+                console.log('Filtered tiers with available tickets:', tiers.value);
+
+                // If we have tiers, select the first one by default
+                if (tiers.value.length > 0) {
+                    selectedTierId.value = tiers.value[0].id;
+                    console.log('Selected first tier:', tiers.value[0]);
+                }
+            } else {
+                console.warn('No tiers returned from API or invalid response format');
+            }
+        } else {
+            console.error('Error fetching tiers, status:', response.status);
+        }
+    } catch (error) {
+        console.error('Error fetching event tiers:', error);
+        toast.add({
+            title: 'Warning',
+            description: 'Failed to load ticket options',
+            color: 'amber'
+        });
     }
 };
 
@@ -444,6 +551,55 @@ const handleInputClick = (event) => {
     event.preventDefault();
     // Make sure the event doesn't propagate up to parent elements
     return false;
+};
+
+// Handle registration button click
+const handleRegistrationClick = () => {
+    console.log('Registration button clicked');
+    console.log('Event:', event.value);
+    console.log('Event type:', event.value?.type);
+    console.log('Available tiers:', tiers.value);
+    console.log('Tiers length:', tiers.value?.length);
+
+    if (!authStore.session) {
+        toast.add({
+            title: 'Authentication Required',
+            description: 'Please log in to register for events',
+            color: 'amber'
+        });
+        return;
+    }
+
+    // Check if event type is paid (case insensitive)
+    const eventType = event.value?.type?.toLowerCase();
+    console.log('Event type (lowercase):', eventType);
+
+    if (eventType === 'paid') {
+        console.log('Event is paid, checking tiers...');
+        if (tiers.value.length === 0) {
+            console.log('No tiers available');
+            // Re-fetch tiers just in case
+            fetchEventTiers().then(() => {
+                console.log('Re-fetched tiers:', tiers.value);
+                if (tiers.value.length === 0) {
+                    toast.add({
+                        title: 'No Tickets Available',
+                        description: 'Sorry, there are no tickets available for this event',
+                        color: 'amber'
+                    });
+                } else {
+                    console.log('Tiers found after re-fetch, opening tier dialog');
+                    showTierDialog.value = true;
+                }
+            });
+            return;
+        }
+        console.log('Opening tier dialog');
+        showTierDialog.value = true;
+    } else {
+        console.log('Event is free, opening count dialog');
+        showCountDialog.value = true;
+    }
 };
 
 // Register for event
@@ -569,6 +725,195 @@ const shareEvent = async () => {
             description: 'Event link copied to clipboard',
             color: 'green'
         });
+    }
+};
+
+// Get maximum quantity for selected tier
+const getMaxQuantityForTier = (tierId) => {
+    const tier = tiers.value.find(t => t.id === tierId);
+    if (!tier) return 1;
+
+    const maxFromLeftover = tier.leftover;
+    const maxFromPersonLimit = tier.max_tickets_per_person || 10;
+
+    return Math.min(maxFromLeftover, maxFromPersonLimit);
+};
+
+// Calculate total amount
+const getTotalAmount = () => {
+    if (!selectedTierId.value || !selectedQuantity.value) return 0;
+
+    const tier = tiers.value.find(t => t.id === selectedTierId.value);
+    if (!tier) return 0;
+
+    return tier.tier_price * selectedQuantity.value;
+};
+
+// Initiate Razorpay payment
+const initiatePayment = async () => {
+    if (!selectedTierId.value || selectedQuantity.value < 1) {
+        toast.add({
+            title: 'Error',
+            description: 'Please select a tier and quantity',
+            color: 'error'
+        });
+        return;
+    }
+
+    isPaymentProcessing.value = true;
+
+    try {
+        // Generate order from backend using the correct endpoint
+        const orderResponse = await fetch(
+            `${config.public.backendUrl}/razorpay/create_order?tier_id=${selectedTierId.value}&quantity=${selectedQuantity.value}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authStore.session}`
+                }
+            }
+        );
+
+        if (!orderResponse.ok) {
+            throw new Error('Failed to create payment order');
+        }
+
+        const orderData = await orderResponse.json();
+        console.log('Order response:', orderData);
+
+        // Extract order ID and amount from response
+        const orderId = orderData.id;
+        const amount = orderData.amount;
+
+        console.log('Order ID for Razorpay:', orderId);
+
+        // Load Razorpay script if not already loaded
+        if (!window.Razorpay) {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.body.appendChild(script);
+            });
+        }
+
+        const options = {
+            key: config.public.razorpayKey,
+            order_id: orderId, // This is the required format for Razorpay
+            amount: amount,  // amount in paise from the server
+            currency: 'INR',
+            name: event.value.event_name,
+            description: `Ticket for ${event.value.event_name}`,
+            image: event.value.image_url || '', // Event logo/image if available
+            handler: function (response) {
+                processPaymentResponse(response);
+            },
+            prefill: {
+                name: authStore.user?.username || 'Customer',
+                email: authStore.user?.email || '',
+                contact: authStore.user?.phone || '',
+            },
+            notes: {
+                event_id: eventId,
+                tier_id: selectedTierId.value,
+                quantity: selectedQuantity.value
+            },
+            theme: {
+                color: '#3498db' // Use your primary color
+            },
+            modal: {
+                ondismiss: function () {
+                    isPaymentProcessing.value = false;
+                }
+            }
+        };
+
+        const rzp1 = new window.Razorpay(options);
+
+        // Handle payment failures
+        rzp1.on('payment.failed', function (response) {
+            console.error('Payment failed:', response.error);
+            isPaymentProcessing.value = false;
+            toast.add({
+                title: 'Payment Failed',
+                description: response.error.description || 'Transaction was unsuccessful',
+                color: 'error'
+            });
+        });
+
+        // Open Razorpay checkout
+        rzp1.open();
+
+    } catch (error) {
+        console.error('Payment initiation error:', error);
+        toast.add({
+            title: 'Payment Failed',
+            description: error.message || 'Failed to initiate payment',
+            color: 'error'
+        });
+        isPaymentProcessing.value = false;
+    }
+};
+
+// Process payment response from Razorpay
+const processPaymentResponse = async (response) => {
+    try {
+        // Log payment response for debugging
+        console.log('Razorpay payment response:', response);
+
+        // Verify payment on backend
+        const paymentId = encodeURIComponent(response.razorpay_payment_id);
+        const orderId = encodeURIComponent(response.razorpay_order_id);
+        const signature = encodeURIComponent(response.razorpay_signature);
+
+        console.log('Payment verification data:', {
+            paymentId,
+            orderId,
+            signature
+        });
+
+        const verifyResponse = await fetch(
+            `${config.public.backendUrl}/razorpay/verify_payment?payment_id=${paymentId}&order_id=${orderId}&signature=${signature}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authStore.session}`
+                },
+                // Additional data in body if needed
+                body: JSON.stringify({
+                    event_id: eventId,
+                    tier_id: selectedTierId.value,
+                    quantity: selectedQuantity.value
+                }),
+            });
+
+        if (verifyResponse.ok) {
+            showTierDialog.value = false;
+            isRegistered.value = true;
+
+            // Refresh event details to update tier leftover counts
+            await fetchEventTiers();
+
+            toast.add({
+                title: 'Payment Successful!',
+                description: `You have successfully purchased ${selectedQuantity.value} ticket(s)`,
+                color: 'green'
+            });
+        } else {
+            throw new Error('Payment verification failed');
+        }
+    } catch (error) {
+        console.error('Payment verification error:', error);
+        toast.add({
+            title: 'Payment Verification Failed',
+            description: 'Please contact support if amount was deducted',
+            color: 'error'
+        });
+    } finally {
+        isPaymentProcessing.value = false;
     }
 };
 

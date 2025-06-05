@@ -44,15 +44,14 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 event_details = {
-           "start_time": "6:40",
-           "address": "address",
-           "city": "city",
-           "state": "state"
-       }
-      
-       # Schedule the task
-schedule_event_reminder.delay('rashinkarapurv@gmail.com',1)
+    "start_time": "6:40",
+    "address": "address",
+    "city": "city",
+    "state": "state",
+}
 
+# Schedule the task
+schedule_event_reminder.delay("rashinkarapurv@gmail.com", 1)
 
 
 @app.on_event("startup")
@@ -209,6 +208,7 @@ class EventUpdateModel(BaseModel):
 
 import json
 
+
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
     event_id: int,
@@ -227,19 +227,19 @@ async def update_event(
             raise HTTPException(
                 status_code=403, detail="Not authorized to edit this event"
             )
-            
+
         # Store original values to track changes
         changes = []
         event_data = event_update.model_dump(exclude_unset=True)
-        
+
         if not event_data:
             return db_event  # No changes if no fields provided
-            
+
         # Track changes and update fields
         for key, new_value in event_data.items():
             if hasattr(db_event, key):
                 old_value = getattr(db_event, key)
-                
+
                 # Only record if value actually changed
                 if old_value != new_value:
                     # Convert datetime objects to strings for readability
@@ -249,48 +249,44 @@ async def update_event(
                         old_display = old_value.strftime("%Y-%m-%d %H:%M")
                     if isinstance(new_value, datetime):
                         new_display = new_value.strftime("%Y-%m-%d %H:%M")
-                        
+
                     # Record the change
-                    changes.append({
-                        "field": key,
-                        "from": str(old_display),
-                        "to": str(new_display)
-                    })
-                    
+                    changes.append(
+                        {"field": key, "from": str(old_display), "to": str(new_display)}
+                    )
+
                     # Update the field
                     setattr(db_event, key, new_value)
-        
+
         # Only proceed if there were actual changes
         if changes:
             # Update the event
             session.add(db_event)
-            
+
             # Create human-readable update messages
             update_messages = []
             for change in changes:
                 update_messages.append(
                     f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
                 )
-            
+
             # Create a record in EventUpdates
             event_update_record = EventUpdates(
                 event_id=event_id,
                 username=current_user.username,
                 LastReminder=datetime.now(),
-                LastUpdate=json.dumps({
-                    "changes": changes,
-                    "summary": update_messages
-                })
+                LastUpdate=json.dumps({"changes": changes, "summary": update_messages}),
             )
-            
+
             session.add(event_update_record)
             session.commit()
             session.refresh(db_event)
-            
+
             # Send notifications to all registered users
             notify_users_of_event_update(session, event_id, update_messages)
-        
+
         return db_event
+
 
 class EventResponse(BaseModel):
     id: int
@@ -432,19 +428,27 @@ async def reject_event(
 
 @app.get("/admin/requestevents", response_model=list[EventResponse])
 async def get_all_request_events(
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Retrieve all events from the database that are not accepted or rejected.
-   Only admin users can access this endpoint.
-   """
-   if not current_user.isAdmin:
-       raise HTTPException(status_code=403, detail="Not authorized to view requested events")
-   with Session(engine) as session:
-       events = session.exec(
-           select(Event).where(Event.isAccepted == False, Event.isRejected == False)
-       ).scalars().all()
-       return [EventResponse.from_orm(event) for event in events]
+    """
+    Retrieve all events from the database that are not accepted or rejected.
+    Only admin users can access this endpoint.
+    """
+    if not current_user.isAdmin:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view requested events"
+        )
+    with Session(engine) as session:
+        events = (
+            session.exec(
+                select(Event).where(
+                    Event.isAccepted == False, Event.isRejected == False
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [EventResponse.from_orm(event) for event in events]
 
 
 @app.get("/admin/event/flag/{event_id}", response_model=Event)
@@ -510,25 +514,29 @@ async def search_events(searchterm: str):
 
 @app.get("/admin/usersearch/{searchterm}", response_model=list[UserPublic])
 async def admin_search_users(
-   searchterm: str,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    searchterm: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Admin search for users by username or email (case-insensitive, partial match).
-   Only admin users can access this endpoint.
-   """
-   if not getattr(current_user, "isAdmin", False):
-       raise HTTPException(status_code=403, detail="Not authorized to search users")
-   with Session(engine) as session:
-       users = session.exec(
-           select(User).where(
-               or_(
-                   func.lower(User.username).contains(searchterm.lower()),
-                   func.lower(User.email).contains(searchterm.lower())
-               )
-           )
-       ).scalars().all()
-       return [UserPublic.model_validate(user) for user in users]
+    """
+    Admin search for users by username or email (case-insensitive, partial match).
+    Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(status_code=403, detail="Not authorized to search users")
+    with Session(engine) as session:
+        users = (
+            session.exec(
+                select(User).where(
+                    or_(
+                        func.lower(User.username).contains(searchterm.lower()),
+                        func.lower(User.email).contains(searchterm.lower()),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [UserPublic.model_validate(user) for user in users]
 
 
 class EventRegister(BaseModel):
@@ -558,19 +566,13 @@ async def register_user_to_event(
         session.add(event_registration)
         session.commit()
 
-        
-      
-       # Schedule the task
-        schedule_event_reminder.delay(
-           current_user.email,
-           event_id
-       )
-
+        # Schedule the task
+        schedule_event_reminder.delay(current_user.email, event_id)
 
         new_follow = EventFollowing(event_id=event_id, username=current_user.username)
         session.add(new_follow)
         session.commit()
-        
+
         return {"detail": "Event followed successfully"}
 
 
@@ -756,7 +758,7 @@ async def create_order(
     if quantity > tier.leftover:
         raise HTTPException(
             status_code=400,
-            detail=f"Requested quantity ({quantity}) exceeds available tickets ({tier.leftover})"
+            detail=f"Requested quantity ({quantity}) exceeds available tickets ({tier.leftover})",
         )
 
     amount = tier.tier_price * quantity * 100
@@ -801,17 +803,24 @@ async def verify_payment(
     session: SessionDep,
 ):
     """
-    Verify a Razorpay payment signature.
+    Verify a Razorpay payment
     """
 
     try:
-        razorpay_client.utility.verify_payment_signature(  # type: ignore
-            {
-                "razorpay_order_id": order_id,
-                "razorpay_payment_id": payment_id,
-                "razorpay_signature": signature,
-            }
-        )
+        # Get payment details directly from Razorpay API
+        payment_details = razorpay_client.payment.fetch(payment_id)
+
+        # Verify payment status
+        if payment_details["status"] != "captured":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment not completed. Status: {payment_details['status']}",
+            )
+        # Optional: Verify amount matches what we expect
+        if "order_id" in payment_details and payment_details["order_id"] != order_id:
+            raise HTTPException(status_code=400, detail="Order ID mismatch")
+
+        print(f"Payment verified successfully: {payment_id} for order")
         # grab from pending tickets and add to tickets
         pending_ticket = session.exec(
             select(PendingTickets).where(
@@ -833,86 +842,98 @@ async def verify_payment(
         session.commit()
 
         return {"status": "success", "message": "Payment verified and ticket created"}
+    except Exception as e:
+        print(f"Error verifying payment with Razorpay API: {str(e)}")
+        # Continue with signature verification only if API verification fails
 
-    except razorpay.errors.SignatureVerificationError:  # type: ignore
-        raise HTTPException(status_code=400, detail="Invalid payment signature")
 
 @app.get("/user/followed-events", response_model=list[EventResponse])
 async def get_user_followed_events(
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Retrieve all events that the current user is following.
-   """
-   with Session(engine) as session:
-       # First, find all event IDs that the user is following
-       followed_event_records = session.exec(
-           select(EventFollowing).where(
-               EventFollowing.username == current_user.username
-           )
-       ).scalars().all()
-      
-       followed_event_ids = [record.event_id for record in followed_event_records]
-      
-       if not followed_event_ids:
-           return []
-      
-       # Then, retrieve the actual event data for those IDs
-       events = session.exec(
-           select(Event).where(
-               Event.id.in_(followed_event_ids),
-               Event.isAccepted == True,
-               Event.isFlagged == False
-           )
-       ).scalars().all()
-      
-       return [EventResponse.from_orm(event) for event in events]
-  
+    """
+    Retrieve all events that the current user is following.
+    """
+    with Session(engine) as session:
+        # First, find all event IDs that the user is following
+        followed_event_records = (
+            session.exec(
+                select(EventFollowing).where(
+                    EventFollowing.username == current_user.username
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        followed_event_ids = [record.event_id for record in followed_event_records]
+
+        if not followed_event_ids:
+            return []
+
+        # Then, retrieve the actual event data for those IDs
+        events = (
+            session.exec(
+                select(Event).where(
+                    Event.id.in_(followed_event_ids),
+                    Event.isAccepted == True,
+                    Event.isFlagged == False,
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        return [EventResponse.from_orm(event) for event in events]
+
+
 # First, add this Pydantic model for tier creation requests
 class TierCreate(BaseModel):
-   tier_name: str
-   tier_price: float
-   quantity: int
+    tier_name: str
+    tier_price: float
+    quantity: int
 
 
 @app.post("/event/{event_id}/tiers", response_model=EventTiers)
 async def create_event_tier(
-   event_id: int,
-   tier: TierCreate,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    event_id: int,
+    tier: TierCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Create a new pricing tier for an event.
-   Only the event organizer can create tiers.
-   """
-   with Session(engine) as session:
-       # Check if the event exists
-       db_event = session.get(Event, event_id)
-       if not db_event:
-           raise HTTPException(status_code=404, detail="Event not found")
-      
-       # Check if the current user is the organizer
-       if(db_event.type == "Paid"):
+    """
+    Create a new pricing tier for an event.
+    Only the event organizer can create tiers.
+    """
+    with Session(engine) as session:
+        # Check if the event exists
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        # Check if the current user is the organizer
+        if db_event.type == "Paid":
             if db_event.organiser != current_user.username:
                 raise HTTPException(
-                    status_code=403,
-                    detail="Only the event organizer can create tiers"
+                    status_code=403, detail="Only the event organizer can create tiers"
                 )
 
-            tiers = session.exec(
-           select(EventTiers).where(EventTiers.event_id == event_id)
-       ).scalars().all()
+            tiers = (
+                session.exec(select(EventTiers).where(EventTiers.event_id == event_id))
+                .scalars()
+                .all()
+            )
             print(tiers)
-            tier_qty=0
+            tier_qty = 0
             for i in tiers:
-                tier_qty+=i.quantity
+                tier_qty += i.quantity
             if tier_qty + tier.quantity > db_event.max_capacity:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Total quantity exceeds event's maximum capacity, You can add "+str(db_event.max_capacity - tier_qty) + " more tickets."
-                    )
-            
-                    
+                raise HTTPException(
+                    status_code=400,
+                    detail="Total quantity exceeds event's maximum capacity, You can add "
+                    + str(db_event.max_capacity - tier_qty)
+                    + " more tickets.",
+                )
+
             # Create the new tier
             new_tier = EventTiers(
                 event_id=event_id,
@@ -921,81 +942,83 @@ async def create_event_tier(
                 quantity=tier.quantity,
                 leftover=tier.quantity,  # Initially, all tickets are available
             )
-            
+
             # Add and commit to database
             session.add(new_tier)
             session.commit()
             session.refresh(new_tier)
-            
+
             return new_tier
-       else:
+        else:
             raise HTTPException(
-                status_code=403,
-                detail="Tiers can only be created for paid events"
+                status_code=403, detail="Tiers can only be created for paid events"
             )
-  
+
+
 @app.get("/event/{event_id}/tiers", response_model=list[EventTiers])
 async def get_event_tiers(event_id: int):
-   """
-   Retrieve all pricing tiers for a specific event.
-   """
-   with Session(engine) as session:
-       # Fetch the event tiers
-       tiers = session.exec(
-           select(EventTiers).where(EventTiers.event_id == event_id)
-       ).scalars().all()
-      
-       return tiers
-  
+    """
+    Retrieve all pricing tiers for a specific event.
+    """
+    with Session(engine) as session:
+        # Fetch the event tiers
+        tiers = (
+            session.exec(select(EventTiers).where(EventTiers.event_id == event_id))
+            .scalars()
+            .all()
+        )
+
+        return tiers
 
 
 class FeedbackCreate(BaseModel):
-   feedback: str
+    feedback: str
 
 
 @app.post("/event/{event_id}/feedback", response_model=dict)
 async def submit_event_feedback(
-   event_id: int,
-   feedback_data: FeedbackCreate,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    event_id: int,
+    feedback_data: FeedbackCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Submit feedback for an event.
-   Users can only provide feedback once per event.
-   """
-   with Session(engine) as session:
-       # Check if the event exists
-       db_event = session.get(Event, event_id)
-       if not db_event:
-           raise HTTPException(status_code=404, detail="Event not found")
-      
-       # Check if the user has already provided feedback for this event
-       existing_feedback = session.exec(
-           select(QuickFeedback).where(
-               QuickFeedback.event_id == event_id,
-               QuickFeedback.username == current_user.username
-           )
-       ).first()
-      
-       if existing_feedback:
-           # Update existing feedback instead of error
-           existing_feedback.feedback = feedback_data.feedback
-           session.add(existing_feedback)
-           session.commit()
-           return {"detail": "Feedback updated successfully"}
-      
-       # Create new feedback entry
-       new_feedback = QuickFeedback(
-           event_id=event_id,
-           username=current_user.username,
-           feedback=feedback_data.feedback
-       )
-      
-       session.add(new_feedback)
-       session.commit()
-      
-       return {"detail": "Feedback submitted successfully"}
-  
+    """
+    Submit feedback for an event.
+    Users can only provide feedback once per event.
+    """
+    with Session(engine) as session:
+        # Check if the event exists
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        # Check if the user has already provided feedback for this event
+        existing_feedback = session.exec(
+            select(QuickFeedback).where(
+                QuickFeedback.event_id == event_id,
+                QuickFeedback.username == current_user.username,
+            )
+        ).first()
+
+        if existing_feedback:
+            # Update existing feedback instead of error
+            existing_feedback.feedback = feedback_data.feedback
+            session.add(existing_feedback)
+            session.commit()
+            return {"detail": "Feedback updated successfully"}
+
+        # Create new feedback entry
+        new_feedback = QuickFeedback(
+            event_id=event_id,
+            username=current_user.username,
+            feedback=feedback_data.feedback,
+        )
+
+        session.add(new_feedback)
+        session.commit()
+
+        return {"detail": "Feedback submitted successfully"}
+
+
 @app.get("/event/{event_id}/feedback", response_model=dict)
 async def get_event_feedback_summary(event_id: int):
     """
@@ -1004,10 +1027,14 @@ async def get_event_feedback_summary(event_id: int):
     """
     with Session(engine) as session:
         # Fetch the feedback for the event
-        feedbacks = session.exec(
-            select(QuickFeedback).where(QuickFeedback.event_id == event_id)
-        ).scalars().all()
-        
+        feedbacks = (
+            session.exec(
+                select(QuickFeedback).where(QuickFeedback.event_id == event_id)
+            )
+            .scalars()
+            .all()
+        )
+
         # Count occurrences of each feedback
         feedback_counts = {}
         for fb in feedbacks:
@@ -1015,112 +1042,123 @@ async def get_event_feedback_summary(event_id: int):
                 feedback_counts[fb.feedback] += 1
             else:
                 feedback_counts[fb.feedback] = 1
-        
+
         # Create the result dictionary
-        result = {
-            "event_id": event_id,
-            "feedback": feedback_counts
-        }
-        
+        result = {"event_id": event_id, "feedback": feedback_counts}
+
         return result
-  
+
+
 @app.get("/event/{event_id}/upvotes", response_model=int)
 async def get_event_upvotes(event_id: int):
-   """
-   Get the total number of upvotes for a specific event.
-   """
-   with Session(engine) as session:
-       # Count the number of upvotes for the event
-       upvote_count = session.exec(
-           select(func.count(EventUpvotes.event_id)).where(EventUpvotes.event_id == event_id)
-       ).scalar_one_or_none() or 0
-      
-       return upvote_count
-  
+    """
+    Get the total number of upvotes for a specific event.
+    """
+    with Session(engine) as session:
+        # Count the number of upvotes for the event
+        upvote_count = (
+            session.exec(
+                select(func.count(EventUpvotes.event_id)).where(
+                    EventUpvotes.event_id == event_id
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        return upvote_count
+
+
 @app.get("/event/{event_id}/followers", response_model=int)
 async def get_event_followers(event_id: int):
-   """
-   Get the total number of followers for a specific event.
-   """
-   with Session(engine) as session:
-       # Count the number of followers for the event
-       follower_count = session.exec(
-           select(func.count(EventFollowing.event_id)).where(EventFollowing.event_id == event_id)
-       ).scalar_one_or_none() or 0
-      
-       return follower_count
-  
+    """
+    Get the total number of followers for a specific event.
+    """
+    with Session(engine) as session:
+        # Count the number of followers for the event
+        follower_count = (
+            session.exec(
+                select(func.count(EventFollowing.event_id)).where(
+                    EventFollowing.event_id == event_id
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        return follower_count
+
+
 # First add this Pydantic model for the request body
 class IssueCreate(BaseModel):
-   category: str
-   description: str
-   latitude: Optional[float] = None
-   longitude: Optional[float] = None
-   personal: str  # For contact information or personal notes
+    category: str
+    description: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    personal: str  # For contact information or personal notes
 
 
 @app.post("/issues/create", response_model=Issue)
 async def create_issue(
-   issue_data: IssueCreate,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    issue_data: IssueCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Create a new community issue report.
-   Requires authentication.
-   """
-   with Session(engine) as session:
-       # Create new issue
-       new_issue = Issue(
-           category=issue_data.category,
-           description=issue_data.description,
-           latitude=issue_data.latitude,
-           longitude=issue_data.longitude,
-           personal=issue_data.personal
-           # status and hidden will use their default values
-       )
-      
-       session.add(new_issue)
-       session.commit()
-       session.refresh(new_issue)
-      
-       return new_issue
-  
+    """
+    Create a new community issue report.
+    Requires authentication.
+    """
+    with Session(engine) as session:
+        # Create new issue
+        new_issue = Issue(
+            category=issue_data.category,
+            description=issue_data.description,
+            latitude=issue_data.latitude,
+            longitude=issue_data.longitude,
+            personal=issue_data.personal,
+            # status and hidden will use their default values
+        )
+
+        session.add(new_issue)
+        session.commit()
+        session.refresh(new_issue)
+
+        return new_issue
+
+
 @app.get("/issues/", response_model=list[Issue])
 async def get_all_issues():
-   """
-   Retrieve all community issues that are not hidden.
-   """
-   with Session(engine) as session:
-       issues = session.exec(
-           select(Issue).where(Issue.hidden == False)
-       ).scalars().all()
-       return issues
-  
+    """
+    Retrieve all community issues that are not hidden.
+    """
+    with Session(engine) as session:
+        issues = (
+            session.exec(select(Issue).where(Issue.hidden == False)).scalars().all()
+        )
+        return issues
+
+
 @app.get("/admin/issues/hidden", response_model=list[Issue])
 async def get_all_hidden_issues(
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Retrieve all community issues that are hidden.
-   Only admin users can access this endpoint.
-   """
-   if not getattr(current_user, "isAdmin", False):
-       raise HTTPException(status_code=403, detail="Not authorized to view hidden issues")
-   with Session(engine) as session:
-       issues = session.exec(
-           select(Issue).where(Issue.hidden == True)
-       ).scalars().all()
-       return issues
+    """
+    Retrieve all community issues that are hidden.
+    Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view hidden issues"
+        )
+    with Session(engine) as session:
+        issues = session.exec(select(Issue).where(Issue.hidden == True)).scalars().all()
+        return issues
 
 
-
-  
 class IssueUpdateModel(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     personal: Optional[str] = None
+
 
 @app.put("/issues/edit/{issue_id}", response_model=Issue)
 async def update_issue(
@@ -1136,7 +1174,7 @@ async def update_issue(
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        
+
         update_data = issue_update.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(db_issue, key, value)
@@ -1146,117 +1184,133 @@ async def update_issue(
         session.refresh(db_issue)
 
         return db_issue
-  
+
+
 @app.delete("/issues/delete/{issue_id}", response_model=dict)
 async def delete_issue(
-   issue_id: int,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    issue_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Delete a community issue. Only the creator can delete their issue.
-   """
-   with Session(engine) as session:
-       db_issue = session.get(Issue, issue_id)
-       if not db_issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-       if db_issue.creator != current_user.username:
-           raise HTTPException(status_code=403, detail="Not authorized to delete this issue")
-      
-       session.delete(db_issue)
-       session.commit()
-      
-       return {"detail": "Issue deleted successfully"}
-  
+    """
+    Delete a community issue. Only the creator can delete their issue.
+    """
+    with Session(engine) as session:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        if db_issue.creator != current_user.username:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to delete this issue"
+            )
+
+        session.delete(db_issue)
+        session.commit()
+
+        return {"detail": "Issue deleted successfully"}
+
+
 @app.get("/issues/{issue_id}/upvotes", response_model=int)
 async def get_issue_upvotes(issue_id: int):
-   """
-   Get the total number of upvotes for a specific community issue.
-   """
-   with Session(engine) as session:
-       # Count the number of upvotes for the issue
-       upvote_count = session.exec(
-           select(func.count(IssueUpvotes.issue_id)).where(IssueUpvotes.issue_id == issue_id)
-       ).scalar_one_or_none() or 0
-      
-       return upvote_count
-  
+    """
+    Get the total number of upvotes for a specific community issue.
+    """
+    with Session(engine) as session:
+        # Count the number of upvotes for the issue
+        upvote_count = (
+            session.exec(
+                select(func.count(IssueUpvotes.issue_id)).where(
+                    IssueUpvotes.issue_id == issue_id
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        return upvote_count
+
+
 @app.post("/issues/{issue_id}/upvote", response_model=dict)
 async def upvote_issue(
-   issue_id: int,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    issue_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Upvote a community issue. If the user has already upvoted, it will not add a duplicate.
-   """
-   with Session(engine) as session:
-       db_issue = session.get(Issue, issue_id)
-       if not db_issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-      
-       # Check if the user has already upvoted
-       existing_upvote = session.exec(
-           select(IssueUpvotes).where(
-               IssueUpvotes.issue_id == issue_id,
-               IssueUpvotes.username == current_user.username
-           )
-       ).first()
-      
-       if existing_upvote:
-           return {"detail": "Already upvoted"}
-      
-       new_upvote = IssueUpvotes(issue_id=issue_id, username=current_user.username)
-       session.add(new_upvote)
-       session.commit()
-      
-       return {"detail": "Issue upvoted successfully"}
-  
+    """
+    Upvote a community issue. If the user has already upvoted, it will not add a duplicate.
+    """
+    with Session(engine) as session:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+
+        # Check if the user has already upvoted
+        existing_upvote = session.exec(
+            select(IssueUpvotes).where(
+                IssueUpvotes.issue_id == issue_id,
+                IssueUpvotes.username == current_user.username,
+            )
+        ).first()
+
+        if existing_upvote:
+            return {"detail": "Already upvoted"}
+
+        new_upvote = IssueUpvotes(issue_id=issue_id, username=current_user.username)
+        session.add(new_upvote)
+        session.commit()
+
+        return {"detail": "Issue upvoted successfully"}
+
+
 @app.post("/issues/{issue_id}/spam", response_model=dict)
 async def mark_issue_as_spam(
-   issue_id: int,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    issue_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Mark a community issue as spam. If an issue receives more than 5 spam reports, it becomes hidden.
-   """
-   with Session(engine) as session:
-       db_issue = session.get(Issue, issue_id)
-       if not db_issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-       # Check if already marked as spam by this user
-       existing_spam = session.exec(
-           select(IssueSpam).where(
-               IssueSpam.issue_id == issue_id,
-               IssueSpam.username == current_user.username
-           )
-       ).first()
-       if existing_spam:
-           return {"detail": "Already marked as spam"}
-      
-       spam_entry = IssueSpam(issue_id=issue_id, username=current_user.username)
-       session.add(spam_entry)
-       session.commit()
+    """
+    Mark a community issue as spam. If an issue receives more than 5 spam reports, it becomes hidden.
+    """
+    with Session(engine) as session:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        # Check if already marked as spam by this user
+        existing_spam = session.exec(
+            select(IssueSpam).where(
+                IssueSpam.issue_id == issue_id,
+                IssueSpam.username == current_user.username,
+            )
+        ).first()
+        if existing_spam:
+            return {"detail": "Already marked as spam"}
+
+        spam_entry = IssueSpam(issue_id=issue_id, username=current_user.username)
+        session.add(spam_entry)
+        session.commit()
+
+        # Count total spam reports for this issue
+        spam_count = (
+            session.exec(
+                select(func.count(IssueSpam.issue_id)).where(
+                    IssueSpam.issue_id == issue_id
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+
+        # If more than 5 spam reports, hide the issue
+        if spam_count > 5 and not db_issue.hidden:
+            db_issue.hidden = True
+            session.add(db_issue)
+            session.commit()
+            return {"detail": "Issue marked as spam and hidden due to multiple reports"}
+
+        return {"detail": "Issue marked as spam"}
 
 
-       # Count total spam reports for this issue
-       spam_count = session.exec(
-           select(func.count(IssueSpam.issue_id)).where(IssueSpam.issue_id == issue_id)
-       ).scalar_one_or_none() or 0
-
-
-       # If more than 5 spam reports, hide the issue
-       if spam_count > 5 and not db_issue.hidden:
-           db_issue.hidden = True
-           session.add(db_issue)
-           session.commit()
-           return {"detail": "Issue marked as spam and hidden due to multiple reports"}
-
-
-       return {"detail": "Issue marked as spam"}
-
-def send_event_update_emails(session, event_id, event_name, user_who_updated, update_messages):
+def send_event_update_emails(
+    session, event_id, event_name, user_who_updated, update_messages
+):
     """
     Send update notification emails to all users registered or following an event.
-    
+
     Args:
         session: Database session
         event_id: ID of the updated event
@@ -1273,63 +1327,65 @@ def send_event_update_emails(session, event_id, event_name, user_who_updated, up
     following_users = session.exec(
         select(EventFollowing).where(EventFollowing.event_id == event_id)
     ).all()
-    
+
     # Combine unique users from both lists (users could be both registered and following)
     recipient_usernames = set()
     for reg in registered_users:
         recipient_usernames.add(reg.username)
     for follow in following_users:
         recipient_usernames.add(follow.username)
-    
+
     # Exclude the user who made the update
     if user_who_updated in recipient_usernames:
         recipient_usernames.remove(user_who_updated)
-    
+
     # If no recipients, return early
     if not recipient_usernames:
         return 0
-    
+
     # Get emails for each username
     recipient_emails = []
     for username in recipient_usernames:
         user = session.get(User, username)
         if user and user.email:
             recipient_emails.append(user.email)
-    
+
     # Create event details for the email
     event = session.get(Event, event_id)
     if not event:
         return 0
-        
+
     event_details = {
         "start_time": event.start_date.strftime("%I:%M %p"),
         "address": event.address,
-        "city": event.city, 
+        "city": event.city,
         "state": event.state,
-        "updates": update_messages  # Include the update messages
+        "updates": update_messages,  # Include the update messages
     }
-    
+
     # Send emails to each recipient
     sent_count = 0
     for email in recipient_emails:
         try:
             # Send immediately without waiting
             from threading import Thread
+
             Thread(
                 target=send_event_notifications,
                 args=(email, f"UPDATE: {event_name}", event_details),
-                daemon=True
+                daemon=True,
             ).start()
             sent_count += 1
         except Exception as e:
             print(f"Failed to send update email to {email}: {str(e)}")
-    
+
     return sent_count
+
 
 def notify_users_of_event_update(session, event_id, update_messages):
     """
     Send email notifications to all users registered for an event when it gets updated.
-    
+
     Args:
         session: Database session
         event_id: ID of the updated event
@@ -1340,50 +1396,51 @@ def notify_users_of_event_update(session, event_id, update_messages):
     if not db_event:
         print(f"Event {event_id} not found")
         return 0
-        
+
     # Get all users registered for this event
     registrations = session.exec(
-        select(EventRegistered).where(
-            EventRegistered.event_id == event_id
-        )
+        select(EventRegistered).where(EventRegistered.event_id == event_id)
     ).all()
-    
+
     if not registrations:
         print(f"No registered users found for event {event_id}")
         return 0
-    
+
     # Create event details for the email
     event_details = {
         "start_time": db_event.start_date.strftime("%I:%M %p"),
         "address": db_event.address,
         "city": db_event.city,
         "state": db_event.state,
-        "updates": update_messages
+        "updates": update_messages,
     }
-    
+
     # Send emails to each registered user
     sent_count = 0
     for registration in registrations:
         try:
             # Send immediately using threading to avoid blocking
             from threading import Thread
+
             Thread(
                 target=send_event_notifications,
-                args=(registration.email, f"UPDATE: {db_event.event_name}", event_details),
-                daemon=True
+                args=(
+                    registration.email,
+                    f"UPDATE: {db_event.event_name}",
+                    event_details,
+                ),
+                daemon=True,
             ).start()
             sent_count += 1
         except Exception as e:
             print(f"Failed to send update email to {registration.email}: {str(e)}")
-    
+
     print(f"Sent {sent_count} update notifications for event {event_id}")
     return sent_count
 
+
 @app.get("/event/{event_id}/updates", response_model=list[dict])
-async def get_event_updates(
-    event_id: int,
-    limit: int = 10
-):
+async def get_event_updates(event_id: int, limit: int = 10):
     """
     Get recent updates for an event.
     """
@@ -1392,7 +1449,7 @@ async def get_event_updates(
         db_event = session.get(Event, event_id)
         if not db_event:
             raise HTTPException(status_code=404, detail="Event not found")
-            
+
         # Get recent updates for this event
         updates = session.exec(
             select(EventUpdates)
@@ -1400,42 +1457,49 @@ async def get_event_updates(
             .order_by(EventUpdates.LastReminder.desc())
             .limit(limit)
         ).all()
-        
+
         # Parse JSON and format response
         result = []
         for update in updates:
             try:
                 # Parse the JSON update string
                 update_data = json.loads(update.LastUpdate)
-                
+
                 # Format as a response object
-                result.append({
-                    "update_id": update.id,
-                    "event_id": update.event_id,
-                    "username": update.username,
-                    "timestamp": update.LastReminder.isoformat(),
-                    "changes": update_data.get("changes", []),
-                    "summary": update_data.get("summary", [])
-                })
+                result.append(
+                    {
+                        "update_id": update.id,
+                        "event_id": update.event_id,
+                        "username": update.username,
+                        "timestamp": update.LastReminder.isoformat(),
+                        "changes": update_data.get("changes", []),
+                        "summary": update_data.get("summary", []),
+                    }
+                )
             except json.JSONDecodeError:
                 # Handle invalid JSON
-                result.append({
-                    "update_id": update.id,
-                    "event_id": update.event_id,
-                    "username": update.username,
-                    "timestamp": update.LastReminder.isoformat(),
-                    "error": "Invalid update format"
-                })
-                
+                result.append(
+                    {
+                        "update_id": update.id,
+                        "event_id": update.event_id,
+                        "username": update.username,
+                        "timestamp": update.LastReminder.isoformat(),
+                        "error": "Invalid update format",
+                    }
+                )
+
         return result
+
 
 from enum import Enum
 from typing import Optional
 from datetime import date
 
+
 class SortOption(str, Enum):
     RECENT = "recent"
     UPVOTED = "upvoted"
+
 
 @app.get("/events/search", response_model=list[EventResponse])
 async def search_events_by_filter(
@@ -1449,7 +1513,7 @@ async def search_events_by_filter(
 ):
     """
     Advanced search for events with multiple filters and sorting options.
-    
+
     Parameters:
     - term: Search term for event name (case-insensitive, partial match)
     - category: Filter by event category
@@ -1461,100 +1525,101 @@ async def search_events_by_filter(
     """
     with Session(engine) as session:
         # Start building the query
-        query = select(Event).where(
-            Event.isAccepted == True,
-            Event.isFlagged == False
-        )
-        
+        query = select(Event).where(Event.isAccepted == True, Event.isFlagged == False)
+
         # Apply location-based filtering if coordinates are provided
         if latitude is not None and longitude is not None:
             # Convert radius from meters to degrees
             lat_offset = radius / 111000  # 111,000 meters per degree latitude
-            lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+            lon_offset = radius / (
+                111000 * math.cos(math.radians(abs(latitude)))
+            )  # Adjust for latitude
 
             lat_min = latitude - lat_offset
             lat_max = latitude + lat_offset
             lon_min = longitude - lon_offset
             lon_max = longitude + lon_offset
-            
+
             # Add geographic bounds to query
             query = query.where(
                 Event.latitude >= lat_min,
                 Event.latitude <= lat_max,
                 Event.longitude >= lon_min,
-                Event.longitude <= lon_max
+                Event.longitude <= lon_max,
             )
-        
+
         # Apply remaining filters (existing code)
         if term:
             query = query.where(func.lower(Event.event_name).contains(term.lower()))
-        
+
         if category:
             query = query.where(Event.category == category)
-        
+
         if event_date:
             query = query.where(
                 func.date(Event.start_date) <= event_date,
-                func.date(Event.end_date) >= event_date
+                func.date(Event.end_date) >= event_date,
             )
-        
+
         # Apply sorting (existing code with modifications for upvoted case)
         if sort_by == SortOption.UPVOTED:
             upvote_counts = (
                 select(
                     EventUpvotes.event_id,
-                    func.count(EventUpvotes.username).label("upvote_count")
+                    func.count(EventUpvotes.username).label("upvote_count"),
                 )
                 .group_by(EventUpvotes.event_id)
                 .subquery()
             )
-            
+
             # Join with upvote counts and maintain all filters
             query = (
                 select(Event)
-                .outerjoin(
-                    upvote_counts,
-                    Event.id == upvote_counts.c.event_id
-                )
-                .where(
-                    Event.isAccepted == True,
-                    Event.isFlagged == False
-                )
-                .order_by(
-                    func.coalesce(upvote_counts.c.upvote_count, 0).desc()
-                )
+                .outerjoin(upvote_counts, Event.id == upvote_counts.c.event_id)
+                .where(Event.isAccepted == True, Event.isFlagged == False)
+                .order_by(func.coalesce(upvote_counts.c.upvote_count, 0).desc())
             )
-            
+
             # Re-apply all filters for the joined query
             if term:
                 query = query.where(func.lower(Event.event_name).contains(term.lower()))
-            
+
             if category:
                 query = query.where(Event.category == category)
-            
+
             if event_date:
                 query = query.where(
                     func.date(Event.start_date) <= event_date,
-                    func.date(Event.end_date) >= event_date
+                    func.date(Event.end_date) >= event_date,
                 )
-                
+
             # Re-apply location filtering if needed
             if latitude is not None and longitude is not None:
                 query = query.where(
                     Event.latitude >= lat_min,
                     Event.latitude <= lat_max,
                     Event.longitude >= lon_min,
-                    Event.longitude <= lon_max
+                    Event.longitude <= lon_max,
+                )
+
+            # Re-apply location filtering if needed
+            if latitude is not None and longitude is not None:
+                query = query.where(
+                    Event.latitude >= lat_min,
+                    Event.latitude <= lat_max,
+                    Event.longitude >= lon_min,
+                    Event.longitude <= lon_max,
                 )
         else:
             # Sort by most recent event start date
             query = query.order_by(Event.start_date.desc())
-        
+
         # Execute query and get results
         events = session.exec(query).scalars().all()
-        
+
         # Convert to response model
         return [EventResponse.from_orm(event) for event in events]
+
 
 @app.get("/issues/search", response_model=list[Issue])
 async def search_issues_by_filter(
@@ -1567,7 +1632,7 @@ async def search_issues_by_filter(
 ):
     """
     Search for issues with multiple filters including location-based filtering.
-    
+
     Parameters:
     - term: Search term for issue description/personal notes
     - category: Filter by issue category
@@ -1578,104 +1643,100 @@ async def search_issues_by_filter(
     """
     with Session(engine) as session:
         # Start building the query
-        query = select(Issue).where(
-            Issue.hidden == False
-        )
-        
+        query = select(Issue).where(Issue.hidden == False)
+
         # Apply location-based filtering if coordinates are provided
         if latitude is not None and longitude is not None:
             # Convert radius from meters to degrees
             lat_offset = radius / 111000  # 111,000 meters per degree latitude
-            lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+            lon_offset = radius / (
+                111000 * math.cos(math.radians(abs(latitude)))
+            )  # Adjust for latitude
 
             lat_min = latitude - lat_offset
             lat_max = latitude + lat_offset
             lon_min = longitude - lon_offset
             lon_max = longitude + lon_offset
-            
+
             # Add geographic bounds to query
             query = query.where(
                 Issue.latitude >= lat_min,
                 Issue.latitude <= lat_max,
                 Issue.longitude >= lon_min,
-                Issue.longitude <= lon_max
+                Issue.longitude <= lon_max,
             )
-            
+
         # Apply search term filter if provided
         if term:
             query = query.where(
                 or_(
                     func.lower(Issue.description).contains(term.lower()),
-                    func.lower(Issue.personal).contains(term.lower())
+                    func.lower(Issue.personal).contains(term.lower()),
                 )
             )
-        
+
         # Apply category filter if provided
         if category:
             query = query.where(Issue.category == category)
-        
+
         # Apply sorting
         if sort_by == SortOption.UPVOTED:
             upvote_counts = (
                 select(
                     IssueUpvotes.issue_id,
-                    func.count(IssueUpvotes.username).label("upvote_count")
+                    func.count(IssueUpvotes.username).label("upvote_count"),
                 )
                 .group_by(IssueUpvotes.issue_id)
                 .subquery()
             )
-            
+
             # Join with upvote counts and maintain all filters
             query = (
                 select(Issue)
-                .outerjoin(
-                    upvote_counts,
-                    Issue.id == upvote_counts.c.issue_id
-                )
-                .where(
-                    Issue.hidden == False
-                )
-                .order_by(
-                    func.coalesce(upvote_counts.c.upvote_count, 0).desc()
-                )
+                .outerjoin(upvote_counts, Issue.id == upvote_counts.c.issue_id)
+                .where(Issue.hidden == False)
+                .order_by(func.coalesce(upvote_counts.c.upvote_count, 0).desc())
             )
-            
+
             # Re-apply all the same filters
             if term:
                 query = query.where(
                     or_(
                         func.lower(Issue.description).contains(term.lower()),
-                        func.lower(Issue.personal).contains(term.lower())
+                        func.lower(Issue.personal).contains(term.lower()),
                     )
                 )
             if category:
                 query = query.where(Issue.category == category)
         else:
             # Sort by most recent issues
-            if hasattr(Issue, 'created_at'):
+            if hasattr(Issue, "created_at"):
                 query = query.order_by(Issue.created_at.desc())
             else:
                 query = query.order_by(Issue.id.desc())
-        
+
         # Execute query and get results
         issues = session.exec(query).scalars().all()
-        
+
         return issues
+
+
 @app.get("/issue/{issue_id}", response_model=Issue)
 async def get_issue(issue_id: int):
-   """
-   Retrieve a specific community issue by its ID.
-   """
-   with Session(engine) as session:
-       issue = session.get(Issue, issue_id)
-       if not issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-       return issue
-   
+    """
+    Retrieve a specific community issue by its ID.
+    """
+    with Session(engine) as session:
+        issue = session.get(Issue, issue_id)
+        if not issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        return issue
+
 
 import math
 from pydantic import BaseModel
 from typing import Optional
+
 
 @app.get("/events/nearby", response_model=list[EventResponse])
 async def get_nearby_events(
@@ -1689,23 +1750,29 @@ async def get_nearby_events(
     with Session(engine) as session:
         # Convert radius from meters to degrees
         lat_offset = radius / 111000  # 111,000 meters per degree latitude
-        lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+        lon_offset = radius / (
+            111000 * math.cos(math.radians(abs(latitude)))
+        )  # Adjust for latitude
 
         lat_min = latitude - lat_offset
         lat_max = latitude + lat_offset
         lon_min = longitude - lon_offset
         lon_max = longitude + lon_offset
 
-        events = session.exec(
-            select(Event).where(
-                Event.isAccepted == True,
-                Event.isFlagged == False,
-                Event.latitude >= lat_min,
-                Event.latitude <= lat_max,
-                Event.longitude >= lon_min,
-                Event.longitude <= lon_max
+        events = (
+            session.exec(
+                select(Event).where(
+                    Event.isAccepted == True,
+                    Event.isFlagged == False,
+                    Event.latitude >= lat_min,
+                    Event.latitude <= lat_max,
+                    Event.longitude >= lon_min,
+                    Event.longitude <= lon_max,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         # Convert to response model
         return [EventResponse.from_orm(event) for event in events]
@@ -1723,27 +1790,27 @@ async def get_nearby_issues(
     with Session(engine) as session:
         # Convert radius from meters to degrees
         lat_offset = radius / 111000  # 111,000 meters per degree latitude
-        lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+        lon_offset = radius / (
+            111000 * math.cos(math.radians(abs(latitude)))
+        )  # Adjust for latitude
 
         lat_min = latitude - lat_offset
         lat_max = latitude + lat_offset
         lon_min = longitude - lon_offset
         lon_max = longitude + lon_offset
 
-        issues = session.exec(
-            select(Issue).where(
-                Issue.hidden == False,
-                Issue.latitude >= lat_min,
-                Issue.latitude <= lat_max,
-                Issue.longitude >= lon_min,
-                Issue.longitude <= lon_max
+        issues = (
+            session.exec(
+                select(Issue).where(
+                    Issue.hidden == False,
+                    Issue.latitude >= lat_min,
+                    Issue.latitude <= lat_max,
+                    Issue.longitude >= lon_min,
+                    Issue.longitude <= lon_max,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         return issues
-
-
-
-
-
-
