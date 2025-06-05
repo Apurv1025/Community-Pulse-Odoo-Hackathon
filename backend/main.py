@@ -211,81 +211,92 @@ import json
 
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
-    event_id: int,
-    event_update: EventUpdateModel,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+   event_id: int,
+   event_update: EventUpdateModel,
+   current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    """
-    Update an event. Only provided fields will be updated.
-    Records changes in EventUpdates table and notifies registered users.
-    """
-    with Session(engine) as session:
-        db_event = session.get(Event, event_id)
-        if not db_event:
-            raise HTTPException(status_code=404, detail="Event not found")
-        if db_event.organiser != current_user.username:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to edit this event"
-            )
+   """
+   Update an event. Only provided fields will be updated.
+   Records changes in EventUpdates table and notifies registered users.
+   """
+   with Session(engine) as session:
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           raise HTTPException(status_code=404, detail="Event not found")
+       if db_event.organiser != current_user.username:
+           raise HTTPException(
+               status_code=403, detail="Not authorized to edit this event"
+           )
+          
+       # Store original values to track changes
+       changes = []
+       event_data = event_update.model_dump(exclude_unset=True)
+      
+       if not event_data:
+           return db_event  # No changes if no fields provided
+          
+       # Track changes and update fields
+       for key, new_value in event_data.items():
+           if hasattr(db_event, key):
+               old_value = getattr(db_event, key)
+              
+               # Only record if value actually changed
+               if old_value != new_value:
+                   # Convert datetime objects to strings for readability
+                   old_display = old_value
+                   new_display = new_value
+                   if isinstance(old_value, datetime):
+                       old_display = old_value.strftime("%Y-%m-%d %H:%M")
+                   if isinstance(new_value, datetime):
+                       new_display = new_value.strftime("%Y-%m-%d %H:%M")
+                      
+                   # Record the change
+                   changes.append({
+                       "field": key,
+                       "from": str(old_display),
+                       "to": str(new_display)
+                   })
+                  
+                   # Update the field
+                   setattr(db_event, key, new_value)
+      
+       # Only proceed if there were actual changes
+       if changes:
+           # Update the event
+           session.add(db_event)
+          
+           # Create human-readable update messages
+           update_messages = []
+           for change in changes:
+               update_messages.append(
+                   f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
+               )
+          
+           # Create a record in EventUpdates
+           event_update_record = EventUpdates(
+               event_id=event_id,
+               username=current_user.username,
+               LastReminder=datetime.now(),
+               LastUpdate=json.dumps({
+                   "changes": changes,
+                   "summary": update_messages
+               })
+           )
+          
+           session.add(event_update_record)
+           # Commit to get the ID of the new record
+           session.commit()
+           # Refresh to ensure we have the ID
+           session.refresh(event_update_record)
+           # Refresh the event as well
+           session.refresh(db_event)
+          
+           # Send notifications to all registered users
+           # Pass the update_record_id instead of update_messages
+           notify_users_of_event_update(session, event_id, event_update_record.id)
+      
+       return db_event
 
-        # Store original values to track changes
-        changes = []
-        event_data = event_update.model_dump(exclude_unset=True)
-
-        if not event_data:
-            return db_event  # No changes if no fields provided
-
-        # Track changes and update fields
-        for key, new_value in event_data.items():
-            if hasattr(db_event, key):
-                old_value = getattr(db_event, key)
-
-                # Only record if value actually changed
-                if old_value != new_value:
-                    # Convert datetime objects to strings for readability
-                    old_display = old_value
-                    new_display = new_value
-                    if isinstance(old_value, datetime):
-                        old_display = old_value.strftime("%Y-%m-%d %H:%M")
-                    if isinstance(new_value, datetime):
-                        new_display = new_value.strftime("%Y-%m-%d %H:%M")
-
-                    # Record the change
-                    changes.append(
-                        {"field": key, "from": str(old_display), "to": str(new_display)}
-                    )
-
-                    # Update the field
-                    setattr(db_event, key, new_value)
-
-        # Only proceed if there were actual changes
-        if changes:
-            # Update the event
-            session.add(db_event)
-
-            # Create human-readable update messages
-            update_messages = []
-            for change in changes:
-                update_messages.append(
-                    f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
-                )
-
-            # Create a record in EventUpdates
-            event_update_record = EventUpdates(
-                event_id=event_id,
-                username=current_user.username,
-                LastReminder=datetime.now(),
-                LastUpdate=json.dumps({"changes": changes, "summary": update_messages}),
-            )
-
-            session.add(event_update_record)
-            session.commit()
-            session.refresh(db_event)
-
-            # Send notifications to all registered users
-            notify_users_of_event_update(session, event_id, update_messages)
-
-        return db_event
 
 
 class EventResponse(BaseModel):
@@ -1382,62 +1393,57 @@ def send_event_update_emails(
     return sent_count
 
 
-def notify_users_of_event_update(session, event_id, update_messages):
-    """
-    Send email notifications to all users registered for an event when it gets updated.
 
-    Args:
-        session: Database session
-        event_id: ID of the updated event
-        update_messages: List of update messages describing the changes
-    """
-    # Get the event
-    db_event = session.get(Event, event_id)
-    if not db_event:
-        print(f"Event {event_id} not found")
-        return 0
-
-    # Get all users registered for this event
-    registrations = session.exec(
-        select(EventRegistered).where(EventRegistered.event_id == event_id)
-    ).all()
-
-    if not registrations:
-        print(f"No registered users found for event {event_id}")
-        return 0
-
-    # Create event details for the email
-    event_details = {
-        "start_time": db_event.start_date.strftime("%I:%M %p"),
-        "address": db_event.address,
-        "city": db_event.city,
-        "state": db_event.state,
-        "updates": update_messages,
-    }
-
-    # Send emails to each registered user
-    sent_count = 0
-    for registration in registrations:
-        try:
-            # Send immediately using threading to avoid blocking
-            from threading import Thread
-
-            Thread(
-                target=send_event_notifications,
-                args=(
-                    registration.email,
-                    f"UPDATE: {db_event.event_name}",
-                    event_details,
-                ),
-                daemon=True,
-            ).start()
-            sent_count += 1
-        except Exception as e:
-            print(f"Failed to send update email to {registration.email}: {str(e)}")
-
-    print(f"Sent {sent_count} update notifications for event {event_id}")
-    return sent_count
-
+def notify_users_of_event_update(session, event_id, update_record_id):
+   """
+   Send email notifications to all users registered for an event when it gets updated.
+   Uses the EventUpdates database record directly for reliable update emails.
+   """
+   # Get the event
+   db_event = session.get(Event, event_id)
+   if not db_event:
+       print(f"Event {event_id} not found")
+       return 0
+      
+   # Verify the update record exists
+   update_record = session.get(EventUpdates, update_record_id)
+   if not update_record:
+       print(f"Update record {update_record_id} not found")
+       return 0
+      
+   # Get all users registered for this event WITH their email addresses
+   registrations = session.exec(
+       select(EventRegistered, User.email)
+       .join(User, EventRegistered.username == User.username)
+       .where(EventRegistered.event_id == event_id)
+   ).all()
+  
+   if not registrations:
+       print(f"No registered users found for event {event_id}")
+       return 0
+  
+   # Send emails to each registered user using the dedicated update task
+   sent_count = 0
+   for reg_tuple in registrations:
+       registration, email = reg_tuple  # Unpack the tuple
+       if not email:
+           print(f"No email for user {registration.username}")
+           continue
+      
+       try:
+           from backend.email_tasks import send_event_update_notification
+           # Queue the dedicated update email task
+           send_event_update_notification.delay(
+               recipient_email=email,
+               event_id=event_id,
+               update_id=update_record_id
+           )
+           sent_count += 1
+       except Exception as e:
+           print(f"Failed to queue update email to {email}: {str(e)}")
+  
+   print(f"Queued {sent_count} update notifications for event {event_id}")
+   return sent_count
 
 @app.get("/event/{event_id}/updates", response_model=list[dict])
 async def get_event_updates(event_id: int, limit: int = 10):
@@ -1814,3 +1820,58 @@ async def get_nearby_issues(
         )
 
         return issues
+
+from backend.models import UploadIssue
+
+@app.post("/issue/{issue_id}/upload")
+async def upload_issue_file(
+    file: UploadFile,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: SessionDep,
+    issue_id: int,
+):
+    # check if it is a file
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided",
+        )
+    if not file.filename.endswith((".png", ".jpg", ".jpeg", ".gif")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type",
+        )
+
+    # Verify the issue exists
+    db_issue = session.get(Issue, issue_id)
+    if not db_issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    content = await file.read()
+    filename = (
+        current_user.username
+        + "_"
+        + datetime.now().strftime("%Y%m%d_%H%M%S")
+        + "_"
+        + file.filename
+    )
+    with open("uploads/" + filename, "wb") as f:
+        f.write(content)
+
+    # Create database record using the correct field name issue_id
+    upload = UploadIssue(
+        filename=filename,
+        content_type=file.content_type,  # type: ignore
+        size=len(content),
+        issue_id=issue_id,  # Use issue_id field, not id
+    )
+    session.add(upload)
+    session.commit()
+
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(content),
+    }
+
+

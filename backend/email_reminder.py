@@ -35,7 +35,7 @@ def send_event_notifications(recipient: str, event_name: str, event_details: dic
         
         # Determine if this is an update or a reminder based on event_name
         is_update = event_name.startswith("UPDATE:")
-        
+        print(is_update)
         if is_update:
             msg['Subject'] = event_name  # "UPDATE: Event Name"
         else:

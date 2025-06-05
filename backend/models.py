@@ -147,4 +147,9 @@ class EventUpdates(SQLModel, table=True):
     LastReminder: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     LastUpdate: str = Field(nullable=False)  # JSON string of updates
 
-
+class UploadIssue(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    filename: str = Field(nullable=False)
+    content_type: str = Field(nullable=False)
+    size: int = Field(nullable=False)
+    issue_id: int = Field(foreign_key="issue.id", nullable=False)
