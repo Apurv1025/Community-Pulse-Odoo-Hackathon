@@ -153,3 +153,10 @@ class UploadIssue(SQLModel, table=True):
     content_type: str = Field(nullable=False)
     size: int = Field(nullable=False)
     issue_id: int = Field(foreign_key="issue.id", nullable=False)
+
+class IssueUpdates(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    issue_id: int = Field(foreign_key="issue.id", nullable=False)
+    username: str = Field(foreign_key="user.username", nullable=False)
+    LastReminder: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    LastUpdate: str = Field(nullable=False)  # JSON string of updates

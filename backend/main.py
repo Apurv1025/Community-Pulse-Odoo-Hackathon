@@ -1218,6 +1218,7 @@ class IssueUpdateModel(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     personal: Optional[str] = None
+    status: Optional[str] = None  # e.g., "Open", "In Progress", "Resolved"
 
 
 @app.put("/issues/edit/{issue_id}", response_model=Issue)
@@ -1923,4 +1924,25 @@ async def upload_issue_file(
         "size": len(content),
     }
 
-
+@app.get("/tickets/user/{username}", response_model=list[UserEventTickets])
+async def get_user_tickets(username: str):
+    """
+    Get all ticket records for a specific user.
+    
+    Parameters:
+    - username: The username of the user to retrieve tickets for
+    
+    Returns:
+    - A list of ticket records for the specified user
+    """
+    with Session(engine) as session:
+        tickets = session.exec(
+            select(UserEventTickets).where(UserEventTickets.username == username)
+        ).scalars().all()
+        
+        if not tickets:
+            # Return empty list instead of 404 to maintain consistent return type
+            return []
+            
+        return tickets
+    
