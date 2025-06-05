@@ -1,10 +1,13 @@
+import os
 from typing import Annotated
 from fastapi import Depends
 from sqlmodel import SQLModel, Session, create_engine, select
 from backend.models import *
 
 
-sqlite_file_name = "database.db"
+# Use absolute path for SQLite database
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sqlite_file_name = os.path.join(BASE_DIR, "database.db")
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 
 connect_args = {"check_same_thread": False}

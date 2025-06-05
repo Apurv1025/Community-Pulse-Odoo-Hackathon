@@ -32,7 +32,14 @@ def send_event_notifications(recipient: str, event_name: str, event_details: dic
         msg = MIMEMultipart()
         msg['From'] = "teamcommunitypulse319@gmail.com"
         msg['To'] = recipient
-        msg['Subject'] = f"Tomorrow's Event: {event_name}"
+        
+        # Determine if this is an update or a reminder based on event_name
+        is_update = event_name.startswith("UPDATE:")
+        
+        if is_update:
+            msg['Subject'] = event_name  # "UPDATE: Event Name"
+        else:
+            msg['Subject'] = f"Tomorrow's Event: {event_name}"
         
         # Create the body of the message with safe dictionary access
         location_parts = [
@@ -42,7 +49,33 @@ def send_event_notifications(recipient: str, event_name: str, event_details: dic
         ]
         location = ', '.join(filter(None, location_parts))
         
-        body = f"""
+        # Different body templates for updates vs reminders
+        if is_update:
+            # This is an update notification
+            update_messages = event_details.get('updates', [])
+            updates_text = "\n".join([f"- {update}" for update in update_messages])
+            
+            body = f"""
+Hello!
+
+An event you're following has been updated:
+{event_name.replace("UPDATE: ", "")}
+
+The following changes have been made:
+{updates_text}
+
+Updated Event Details:
+- Time: {event_details.get('start_time', 'TBD')}
+- Location: {location or 'TBD'}
+
+We look forward to seeing you there!
+
+Best regards,
+Community Pulse Team
+            """
+        else:
+            # This is a regular reminder
+            body = f"""
 Hello!
 
 This is a reminder that {event_name} is happening tomorrow!
@@ -55,7 +88,7 @@ We look forward to seeing you there!
 
 Best regards,
 Community Pulse Team
-        """
+            """
         
         msg.attach(MIMEText(body, 'plain'))
         s = smtplib.SMTP('smtp.gmail.com', 587)
@@ -82,5 +115,5 @@ Authentication failed! Please check:
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
         return False
-    
+
 

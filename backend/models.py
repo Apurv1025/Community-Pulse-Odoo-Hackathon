@@ -101,6 +101,7 @@ class EventTiers(SQLModel, table=True):
     tier_name: str = Field(nullable=False)
     tier_price: float = Field(nullable=False)
     quantity: int = Field(nullable=False)
+    leftover: int = Field(nullable=False)
 
 class UserEventTickets(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -138,3 +139,12 @@ class PendingTickets(SQLModel, table=True):
     tier_id: int = Field(foreign_key="eventtiers.id", nullable=False)
     quantity: int = Field(nullable=False)
     price: float = Field(nullable=False)
+
+class EventUpdates(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    event_id: int = Field(foreign_key="event.id", nullable=False)
+    username:str = Field(foreign_key="user.username", nullable=False)
+    LastReminder: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    LastUpdate: str = Field(nullable=False)  # JSON string of updates
+
+

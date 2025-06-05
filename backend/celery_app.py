@@ -9,7 +9,7 @@ celery_app = Celery(
     'community_pulse',
     broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
     backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
-    include=['backend.email_tasks']
+    include=['backend.email_tasks', 'backend.celery_config']  # Add celery_config
 )
 
 # Optional configuration

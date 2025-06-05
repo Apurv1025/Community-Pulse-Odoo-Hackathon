@@ -51,7 +51,7 @@ event_details = {
        }
       
        # Schedule the task
-schedule_event_reminder.delay('rashinkarapurv@gmail.com',"hello",event_details,'2025-06-06')
+schedule_event_reminder.delay('rashinkarapurv@gmail.com',1)
 
 
 
@@ -207,6 +207,8 @@ class EventUpdateModel(BaseModel):
     max_capacity: Optional[int] = None  # Optional max capacity field
 
 
+import json
+
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
     event_id: int,
@@ -215,7 +217,7 @@ async def update_event(
 ):
     """
     Update an event. Only provided fields will be updated.
-    If the event does not exist, no changes are made and a 404 is returned.
+    Records changes in EventUpdates table and notifies registered users.
     """
     with Session(engine) as session:
         db_event = session.get(Event, event_id)
@@ -225,16 +227,70 @@ async def update_event(
             raise HTTPException(
                 status_code=403, detail="Not authorized to edit this event"
             )
+            
+        # Store original values to track changes
+        changes = []
         event_data = event_update.model_dump(exclude_unset=True)
+        
         if not event_data:
             return db_event  # No changes if no fields provided
-        for key, value in event_data.items():
-            setattr(db_event, key, value)
-        session.add(db_event)
-        session.commit()
-        session.refresh(db_event)
+            
+        # Track changes and update fields
+        for key, new_value in event_data.items():
+            if hasattr(db_event, key):
+                old_value = getattr(db_event, key)
+                
+                # Only record if value actually changed
+                if old_value != new_value:
+                    # Convert datetime objects to strings for readability
+                    old_display = old_value
+                    new_display = new_value
+                    if isinstance(old_value, datetime):
+                        old_display = old_value.strftime("%Y-%m-%d %H:%M")
+                    if isinstance(new_value, datetime):
+                        new_display = new_value.strftime("%Y-%m-%d %H:%M")
+                        
+                    # Record the change
+                    changes.append({
+                        "field": key,
+                        "from": str(old_display),
+                        "to": str(new_display)
+                    })
+                    
+                    # Update the field
+                    setattr(db_event, key, new_value)
+        
+        # Only proceed if there were actual changes
+        if changes:
+            # Update the event
+            session.add(db_event)
+            
+            # Create human-readable update messages
+            update_messages = []
+            for change in changes:
+                update_messages.append(
+                    f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
+                )
+            
+            # Create a record in EventUpdates
+            event_update_record = EventUpdates(
+                event_id=event_id,
+                username=current_user.username,
+                LastReminder=datetime.now(),
+                LastUpdate=json.dumps({
+                    "changes": changes,
+                    "summary": update_messages
+                })
+            )
+            
+            session.add(event_update_record)
+            session.commit()
+            session.refresh(db_event)
+            
+            # Send notifications to all registered users
+            notify_users_of_event_update(session, event_id, update_messages)
+        
         return db_event
-
 
 class EventResponse(BaseModel):
     id: int
@@ -502,19 +558,12 @@ async def register_user_to_event(
         session.add(event_registration)
         session.commit()
 
-        event_details = {
-           "start_time": db_event.start_date.strftime("%I:%M %p"),
-           "address": db_event.address,
-           "city": db_event.city,
-           "state": db_event.state
-       }
+        
       
        # Schedule the task
         schedule_event_reminder.delay(
            current_user.email,
-           db_event.event_name,
-           event_details,
-           db_event.start_date.strftime('%Y-%m-%d')
+           event_id
        )
 
 
@@ -696,11 +745,20 @@ async def create_order(
 ):
     """
     Create a Razorpay order for a specific tier and quantity.
+    Also updates the leftover quantity in EventTiers.
+    Ensures requested quantity does not exceed available tickets.
     """
 
     tier = session.get(EventTiers, tier_id)
     if not tier:
         raise HTTPException(status_code=404, detail="Tier not found")
+
+    if quantity > tier.leftover:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requested quantity ({quantity}) exceeds available tickets ({tier.leftover})"
+        )
+
     amount = tier.tier_price * quantity * 100
 
     order_data = {
@@ -711,6 +769,10 @@ async def create_order(
             "quantity": quantity,
         },
     }
+
+    # Update leftover quantity
+    tier.leftover -= quantity
+    session.add(tier)
 
     session.add(
         PendingTickets(
@@ -830,26 +892,44 @@ async def create_event_tier(
            raise HTTPException(status_code=404, detail="Event not found")
       
        # Check if the current user is the organizer
-       if db_event.organiser != current_user.username:
-           raise HTTPException(
-               status_code=403,
-               detail="Only the event organizer can create tiers"
-           )
-      
-       # Create the new tier
-       new_tier = EventTiers(
-           event_id=event_id,
-           tier_name=tier.tier_name,
-           tier_price=tier.tier_price,
-           quantity=tier.quantity
-       )
-      
-       # Add and commit to database
-       session.add(new_tier)
-       session.commit()
-       session.refresh(new_tier)
-      
-       return new_tier
+       if(db_event.type == "paid"):
+            if db_event.organiser != current_user.username:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only the event organizer can create tiers"
+                )
+
+            tiers=session.get(EventTiers, event_id)
+            tier_qty=0
+            for i in tiers:
+                tier_qty+=i.quantity
+            if tier_qty + tier.quantity > db_event.max_capacity:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Total quantity exceeds event's maximum capacity, You can add"+(db_event.max_capacity - tier_qty) + " more tickets."
+                    )
+            
+                    
+            # Create the new tier
+            new_tier = EventTiers(
+                event_id=event_id,
+                tier_name=tier.tier_name,
+                tier_price=tier.tier_price,
+                quantity=tier.quantity,
+                leftover=tier.quantity,  # Initially, all tickets are available
+            )
+            
+            # Add and commit to database
+            session.add(new_tier)
+            session.commit()
+            session.refresh(new_tier)
+            
+            return new_tier
+       else:
+            raise HTTPException(
+                status_code=403,
+                detail="Tiers can only be created for paid events"
+            )
   
 @app.get("/event/{event_id}/tiers", response_model=list[EventTiers])
 async def get_event_tiers(event_id: int):
@@ -1173,6 +1253,281 @@ async def mark_issue_as_spam(
 
 
        return {"detail": "Issue marked as spam"}
+
+def send_event_update_emails(session, event_id, event_name, user_who_updated, update_messages):
+    """
+    Send update notification emails to all users registered or following an event.
+    
+    Args:
+        session: Database session
+        event_id: ID of the updated event
+        event_name: Name of the event
+        user_who_updated: Username who made the update
+        update_messages: List of update messages describing the changes
+    """
+    # Get all users registered for this event
+    registered_users = session.exec(
+        select(EventRegistered).where(EventRegistered.event_id == event_id)
+    ).all()
+
+    # Get all users following this event
+    following_users = session.exec(
+        select(EventFollowing).where(EventFollowing.event_id == event_id)
+    ).all()
+    
+    # Combine unique users from both lists (users could be both registered and following)
+    recipient_usernames = set()
+    for reg in registered_users:
+        recipient_usernames.add(reg.username)
+    for follow in following_users:
+        recipient_usernames.add(follow.username)
+    
+    # Exclude the user who made the update
+    if user_who_updated in recipient_usernames:
+        recipient_usernames.remove(user_who_updated)
+    
+    # If no recipients, return early
+    if not recipient_usernames:
+        return 0
+    
+    # Get emails for each username
+    recipient_emails = []
+    for username in recipient_usernames:
+        user = session.get(User, username)
+        if user and user.email:
+            recipient_emails.append(user.email)
+    
+    # Create event details for the email
+    event = session.get(Event, event_id)
+    if not event:
+        return 0
+        
+    event_details = {
+        "start_time": event.start_date.strftime("%I:%M %p"),
+        "address": event.address,
+        "city": event.city, 
+        "state": event.state,
+        "updates": update_messages  # Include the update messages
+    }
+    
+    # Send emails to each recipient
+    sent_count = 0
+    for email in recipient_emails:
+        try:
+            # Send immediately without waiting
+            from threading import Thread
+            Thread(
+                target=send_event_notifications,
+                args=(email, f"UPDATE: {event_name}", event_details),
+                daemon=True
+            ).start()
+            sent_count += 1
+        except Exception as e:
+            print(f"Failed to send update email to {email}: {str(e)}")
+    
+    return sent_count
+
+def notify_users_of_event_update(session, event_id, update_messages):
+    """
+    Send email notifications to all users registered for an event when it gets updated.
+    
+    Args:
+        session: Database session
+        event_id: ID of the updated event
+        update_messages: List of update messages describing the changes
+    """
+    # Get the event
+    db_event = session.get(Event, event_id)
+    if not db_event:
+        print(f"Event {event_id} not found")
+        return 0
+        
+    # Get all users registered for this event
+    registrations = session.exec(
+        select(EventRegistered).where(
+            EventRegistered.event_id == event_id
+        )
+    ).all()
+    
+    if not registrations:
+        print(f"No registered users found for event {event_id}")
+        return 0
+    
+    # Create event details for the email
+    event_details = {
+        "start_time": db_event.start_date.strftime("%I:%M %p"),
+        "address": db_event.address,
+        "city": db_event.city,
+        "state": db_event.state,
+        "updates": update_messages
+    }
+    
+    # Send emails to each registered user
+    sent_count = 0
+    for registration in registrations:
+        try:
+            # Send immediately using threading to avoid blocking
+            from threading import Thread
+            Thread(
+                target=send_event_notifications,
+                args=(registration.email, f"UPDATE: {db_event.event_name}", event_details),
+                daemon=True
+            ).start()
+            sent_count += 1
+        except Exception as e:
+            print(f"Failed to send update email to {registration.email}: {str(e)}")
+    
+    print(f"Sent {sent_count} update notifications for event {event_id}")
+    return sent_count
+
+@app.get("/event/{event_id}/updates", response_model=list[dict])
+async def get_event_updates(
+    event_id: int,
+    limit: int = 10
+):
+    """
+    Get recent updates for an event.
+    """
+    with Session(engine) as session:
+        # Check if the event exists
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+            
+        # Get recent updates for this event
+        updates = session.exec(
+            select(EventUpdates)
+            .where(EventUpdates.event_id == event_id)
+            .order_by(EventUpdates.LastReminder.desc())
+            .limit(limit)
+        ).all()
+        
+        # Parse JSON and format response
+        result = []
+        for update in updates:
+            try:
+                # Parse the JSON update string
+                update_data = json.loads(update.LastUpdate)
+                
+                # Format as a response object
+                result.append({
+                    "update_id": update.id,
+                    "event_id": update.event_id,
+                    "username": update.username,
+                    "timestamp": update.LastReminder.isoformat(),
+                    "changes": update_data.get("changes", []),
+                    "summary": update_data.get("summary", [])
+                })
+            except json.JSONDecodeError:
+                # Handle invalid JSON
+                result.append({
+                    "update_id": update.id,
+                    "event_id": update.event_id,
+                    "username": update.username,
+                    "timestamp": update.LastReminder.isoformat(),
+                    "error": "Invalid update format"
+                })
+                
+        return result
+
+from enum import Enum
+from typing import Optional
+from datetime import date
+
+class SortOption(str, Enum):
+    RECENT = "recent"
+    UPVOTED = "upvoted"
+
+@app.get("/search", response_model=list[EventResponse])
+async def search_events_by_filter(
+    term: Optional[str] = None,
+    category: Optional[str] = None,
+    event_date: Optional[date] = None,
+    sort_by: Optional[SortOption] = SortOption.RECENT,
+):
+    """
+    Advanced search for events with multiple filters and sorting options.
+    
+    Parameters:
+    - term: Search term for event name (case-insensitive, partial match)
+    - category: Filter by event category
+    - event_date: Filter by specific date (YYYY-MM-DD)
+    - sort_by: Sort results by 'recent' (default) or 'upvoted'
+    """
+    with Session(engine) as session:
+        # Start building the query
+        query = select(Event).where(
+            Event.isAccepted == True,
+            Event.isFlagged == False
+        )
+        
+        # Apply searchterm filter if provided
+        if term:
+            query = query.where(func.lower(Event.event_name).contains(term.lower()))
+        
+        # Apply category filter if provided
+        if category:
+            query = query.where(Event.category == category)
+        
+        # Apply date filter if provided
+        if event_date:
+            # Find events on this specific date
+            query = query.where(
+                func.date(Event.start_date) <= event_date,
+                func.date(Event.end_date) >= event_date
+            )
+        
+        # Apply sorting
+        if sort_by == SortOption.UPVOTED:
+            # Count upvotes for each event using a subquery
+            upvote_counts = (
+                select(
+                    EventUpvotes.event_id,
+                    func.count(EventUpvotes.username).label("upvote_count")
+                )
+                .group_by(EventUpvotes.event_id)
+                .subquery()
+            )
+            
+            # Join with the upvote counts and order by count descending
+            query = (
+                select(Event)
+                .outerjoin(
+                    upvote_counts,
+                    Event.id == upvote_counts.c.event_id
+                )
+                .where(
+                    Event.isAccepted == True,
+                    Event.isFlagged == False
+                )
+                # Apply all the same filters
+                .order_by(
+                    func.coalesce(upvote_counts.c.upvote_count, 0).desc()
+                )
+            )
+            
+            # Re-apply all the same filters
+            if term:
+                query = query.where(func.lower(Event.event_name).contains(term.lower()))
+            if category:
+                query = query.where(Event.category == category)
+            if event_date:
+                query = query.where(
+                    func.date(Event.start_date) <= event_date,
+                    func.date(Event.end_date) >= event_date
+                )
+        else:
+            # Sort by most recent event start date
+            query = query.order_by(Event.start_date.desc())
+        
+        # Execute query and get results
+        events = session.exec(query).scalars().all()
+        
+        # Convert to response model
+        return [EventResponse.from_orm(event) for event in events]
+
+
+
 
 
 
