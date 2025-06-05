@@ -1230,11 +1230,18 @@ async def update_issue(
     """
     Update a community issue. Only provided fields will be updated.
     Records changes in IssueUpdates table for audit trail.
+    Only the creator of the issue (identified by personal field) can update it.
     """
     with Session(engine) as session:
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
+        
+        # Check if the current user is the creator of this issue
+        if db_issue.personal != current_user.username:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this issue"
+            )
         
         # Store original values to track changes
         changes = []
@@ -1294,9 +1301,6 @@ async def update_issue(
             session.add(issue_update_record)
             session.commit()
             session.refresh(db_issue)
-            
-            # Optional: Add notification logic here if you want to notify users
-            # about issue updates similar to event updates
         
         return db_issue
 
