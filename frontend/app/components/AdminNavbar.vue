@@ -21,23 +21,10 @@
                             </UButton>
                         </div>
                     </form>
-                    <form class="flex w-full sm:w-1/2" @submit.prevent="searchUsers">
-                        <div class="flex w-full items-center">
-                            <UInput v-model="searchUserTerm" placeholder="Search users..."
-                                class="rounded-l-md w-full" />
-                            <UButton type="submit" icon="i-lucide-users" color="success" class="rounded-r-md h-full">
-                                Users
-                            </UButton>
-                        </div>
-                    </form>
                 </div>
 
                 <!-- Right section with admin actions and logout -->
                 <div class="flex items-center space-x-4">
-                    <UButton to="/admin/users" variant="ghost" color="blue">
-                        <UIcon name="i-lucide-users" class="w-5 h-5 mr-1" />
-                        <span class="hidden sm:inline">Manage Users</span>
-                    </UButton>
                     <UButton color="error" variant="soft" icon="i-lucide-log-out" @click="logout">
                         <span class="hidden sm:inline">Logout</span>
                     </UButton>
