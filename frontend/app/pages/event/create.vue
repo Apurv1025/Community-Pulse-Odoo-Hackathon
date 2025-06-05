@@ -12,17 +12,20 @@ const state = reactive({
     start_date: '',
     end_date: '',
     category: '',
+    event_type: 'Free', // Default to Free
     registration_start: '',
     registration_end: '',
     address: '',
     city: '',
     state: '',
-    img_url: '',
     latitude: '',
     longitude: '',
+    max_capacity: '',
     error: '',
     isLoading: false,
-    locationLoading: false
+    locationLoading: false,
+    showFileUpload: false,
+    createdEventId: null
 });
 
 // Default categories list
@@ -114,6 +117,18 @@ const createEvent = async () => {
         return;
     }
 
+    // Validate latitude and longitude
+    if (!state.latitude || !state.longitude) {
+        state.error = 'Latitude and longitude are required. Use the "Get Current Location" button or enter them manually.';
+        state.isLoading = false;
+        toast.add({
+            title: 'Validation Error',
+            description: state.error,
+            color: 'error'
+        });
+        return;
+    }
+
     try {
         // Create an event object matching the backend EventCreate model
         const eventData = {
@@ -122,14 +137,15 @@ const createEvent = async () => {
             start_date: state.start_date,
             end_date: state.end_date,
             category: state.category,
+            type: state.event_type, // Send as 'type' to the server
             registration_start: state.registration_start,
             registration_end: state.registration_end,
             address: state.address,
             city: state.city,
             state: state.state,
-            img_url: state.img_url,
-            latitude: state.latitude || null,
-            longitude: state.longitude || null
+            latitude: state.latitude,
+            longitude: state.longitude,
+            max_capacity: parseInt(state.max_capacity) || null
         };
 
         console.log('Submitting event:', eventData);
@@ -152,13 +168,18 @@ const createEvent = async () => {
         const createdEvent = await response.json();
         console.log('Event created:', createdEvent);
 
+        // Save the created event ID and show the file upload component
+        state.createdEventId = createdEvent.id;
+        state.showFileUpload = true;
+
         toast.add({
             title: 'Success',
-            description: 'Event created successfully',
+            description: 'Event created successfully. You can now upload images for this event.',
             color: 'success'
         });
 
-        router.push('/');
+        // Don't redirect to home page yet, let the user upload images first
+        // router.push('/');
     } catch (error: Error | unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create event. Please try again.';
         state.error = errorMessage;
@@ -171,11 +192,16 @@ const createEvent = async () => {
         state.isLoading = false;
     }
 };
+
+const finishAndGoHome = () => {
+    router.push('/');
+};
 </script>
 
 <template>
     <UContainer class="py-8">
-        <UCard class="w-full max-w-3xl mx-auto">
+        <!-- Event Creation Form -->
+        <UCard v-if="!state.showFileUpload" class="w-full max-w-3xl mx-auto">
             <template #header>
                 <div class="flex flex-col gap-1">
                     <h2 class="text-xl font-semibold">Create New Event</h2>
@@ -202,9 +228,14 @@ const createEvent = async () => {
                             class="w-full" required />
                     </UFormField>
 
-                    <UFormField label="Image URL" name="img_url" required>
-                        <UInput v-model="state.img_url" type="url" placeholder="URL to event image" class="w-full"
-                            required />
+                    <UFormField label="Event Type" name="event_type" required>
+                        <USelect v-model="state.event_type" :items="['Free', 'Paid']" placeholder="Select event type"
+                            class="w-full" required />
+                    </UFormField>
+
+                    <UFormField label="Max Capacity" name="max_capacity" required>
+                        <UInput v-model="state.max_capacity" type="number" min="1"
+                            placeholder="Maximum number of participants" class="w-full" required />
                     </UFormField>
                 </div>
 
@@ -251,12 +282,14 @@ const createEvent = async () => {
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <UFormField label="Latitude" name="latitude">
-                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full" />
+                        <UFormField label="Latitude" name="latitude" required>
+                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full"
+                                required />
                         </UFormField>
 
-                        <UFormField label="Longitude" name="longitude">
-                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full" />
+                        <UFormField label="Longitude" name="longitude" required>
+                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full"
+                                required />
                         </UFormField>
                     </div>
 
@@ -274,5 +307,18 @@ const createEvent = async () => {
                 <p v-if="state.error" class="text-red-500 text-sm text-center">{{ state.error }}</p>
             </UForm>
         </UCard>
+
+        <!-- File Upload Component (shown after event creation) -->
+        <div v-else>
+            <h2 class="text-2xl font-semibold text-center mb-4">Upload Event Images</h2>
+            <p class="text-center text-gray-600 mb-6">Upload up to 5 images for your event</p>
+
+            <!-- File upload component with dynamically created event ID -->
+            <fileUpload :linksubset="`/event/${state.createdEventId}`" />
+
+            <div class="flex justify-center mt-6">
+                <UButton label="Finish & Go to Home" icon="i-lucide-home" color="primary" @click="finishAndGoHome" />
+            </div>
+        </div>
     </UContainer>
 </template>

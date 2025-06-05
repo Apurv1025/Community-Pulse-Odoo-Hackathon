@@ -17,14 +17,15 @@ const state = reactive({
     start_date: '',
     end_date: '',
     category: '',
+    event_type: '', // Added event_type 
     registration_start: '',
     registration_end: '',
     address: '',
     city: '',
     state: '',
-    img_url: '',
     latitude: '',
     longitude: '',
+    max_capacity: '',
     error: '',
     isLoading: false,
     fetchLoading: true,
@@ -49,12 +50,12 @@ const modifiedFields = reactive({
     start_date: false,
     end_date: false,
     category: false,
+    event_type: false, // Added event_type
     registration_start: false,
     registration_end: false,
     address: false,
     city: false,
     state: false,
-    img_url: false,
     latitude: false,
     longitude: false
 });
@@ -122,7 +123,12 @@ const fetchEvent = async () => {
             throw new Error('Failed to fetch event details');
         }
 
-        const eventData = await response.json();
+        // Parse response which may include both event and images
+        const data = await response.json();
+        console.log("API Response:", data);
+
+        // Extract event data based on the response format
+        const eventData = data.event || data;
 
         // Format datetime fields for input type="datetime-local"
         const formatDate = (dateString) => {
@@ -137,14 +143,15 @@ const fetchEvent = async () => {
         state.start_date = formatDate(eventData.start_date);
         state.end_date = formatDate(eventData.end_date);
         state.category = eventData.category || '';
+        state.event_type = eventData.type || ''; // Get the type field from backend
         state.registration_start = formatDate(eventData.registration_start);
         state.registration_end = formatDate(eventData.registration_end);
         state.address = eventData.address || '';
         state.city = eventData.city || '';
         state.state = eventData.state || '';
-        state.img_url = eventData.img_url || '';
-        state.latitude = eventData.latitude || '';
-        state.longitude = eventData.longitude || '';
+        state.latitude = eventData.latitude?.toString() || '';
+        state.longitude = eventData.longitude?.toString() || '';
+        state.max_capacity = eventData.max_capacity ? eventData.max_capacity.toString() : '';
 
     } catch (error) {
         console.error('Error fetching event:', error);
@@ -208,7 +215,17 @@ const updateEvent = async () => {
         const updateData = {};
         Object.keys(modifiedFields).forEach(field => {
             if (modifiedFields[field]) {
-                updateData[field] = state[field];
+                // Special handling for max_capacity to convert to number
+                if (field === 'max_capacity') {
+                    updateData[field] = parseInt(state[field]) || null;
+                }
+                // Special handling for event_type to send as 'type' to the server
+                else if (field === 'event_type') {
+                    updateData['type'] = state[field];
+                }
+                else {
+                    updateData[field] = state[field];
+                }
             }
         });
 
@@ -252,7 +269,7 @@ const updateEvent = async () => {
         // Navigate back to event details or events list
         router.push(`/event/${eventId.value}`);
     } catch (error) {
-        const errorMessage = error.message || 'Failed to update event. Please try again.';
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update event. Please try again.';
         state.error = errorMessage;
         toast.add({
             title: 'Update Failed',
@@ -298,9 +315,15 @@ const updateEvent = async () => {
                             class="w-full" @input="handleFieldChange('category')" />
                     </UFormField>
 
-                    <UFormField label="Image URL" name="img_url">
-                        <UInput v-model="state.img_url" type="url" placeholder="URL to event image" class="w-full"
-                            @input="handleFieldChange('img_url')" />
+                    <UFormField label="Event Type" name="event_type"> <!-- Added event_type -->
+                        <UInput v-model="state.event_type" type="text" placeholder="Event type cannot be changed"
+                            class="w-full" disabled />
+                    </UFormField>
+
+                    <UFormField label="Max Capacity" name="max_capacity">
+                        <UInput v-model="state.max_capacity" type="number" min="1"
+                            placeholder="Maximum number of participants" class="w-full"
+                            @input="handleFieldChange('max_capacity')" />
                     </UFormField>
                 </div>
 

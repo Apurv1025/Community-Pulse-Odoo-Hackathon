@@ -6,11 +6,14 @@
         <template v-if="event">
             <!-- Event Details Section -->
             <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Left Column - Event Image -->
+                <!-- Left Column - Event Images Carousel -->
                 <div class="md:col-span-2">
                     <UCard class="overflow-hidden">
-                        <div v-if="event.img_url" class="w-full aspect-video">
-                            <img :src="event.img_url" :alt="event.event_name" class="w-full h-full object-cover">
+                        <!-- Image Carousel if multiple images are available -->
+                        <div v-if="eventImages.length > 0" class="w-full aspect-video">
+                            <UCarousel v-slot="{ item }" :items="eventImages" dots class="w-full aspect-video">
+                                <img :src="item" :alt="event.event_name" class="w-full h-full object-cover rounded-lg">
+                            </UCarousel>
                         </div>
                         <div v-else class="w-full aspect-video bg-gray-200 flex items-center justify-center">
                             <UIcon name="i-lucide-image" class="w-16 h-16 text-gray-400" />
@@ -22,7 +25,8 @@
                             <!-- Event Description -->
                             <div class="mt-6">
                                 <h2 class="text-xl font-semibold mb-2">About this event</h2>
-                                <p class="text-gray-400 whitespace-pre-wrap">{{ event.event_description }}</p>
+                                <p class="text-gray-400 whitespace-pre-wrap">{{ event.event_description ||
+                                    'No description provided' }}</p>
                             </div>
                         </div>
                     </UCard>
@@ -49,7 +53,7 @@
                                     <div>
                                         <h3 class="font-medium">Location</h3>
                                         <p class="text-sm text-gray-500">{{ event.city }}, {{ event.state }}</p>
-                                        <p v-if="event.venue" class="text-sm text-gray-500">{{ event.venue }}</p>
+                                        <p v-if="event.address" class="text-sm text-gray-500">{{ event.address }}</p>
                                     </div>
                                 </div>
 
@@ -58,6 +62,24 @@
                                     <div>
                                         <h3 class="font-medium">Category</h3>
                                         <p class="text-sm text-gray-500">{{ event.category }}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Event Type (Free/Paid) -->
+                                <div class="flex items-start gap-3">
+                                    <UIcon name="i-lucide-ticket" class="w-5 h-5 mt-1 text-primary flex-shrink-0" />
+                                    <div>
+                                        <h3 class="font-medium">Event Type</h3>
+                                        <p class="text-sm text-gray-500">{{ event.type }}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Max Capacity -->
+                                <div v-if="event.max_capacity" class="flex items-start gap-3">
+                                    <UIcon name="i-lucide-users" class="w-5 h-5 mt-1 text-primary flex-shrink-0" />
+                                    <div>
+                                        <h3 class="font-medium">Max Capacity</h3>
+                                        <p class="text-sm text-gray-500">{{ event.max_capacity }} attendees</p>
                                     </div>
                                 </div>
 
@@ -102,7 +124,7 @@
                             </template>
 
                             <!-- Attendee Count Dialog -->
-                            <UModal v-model="showCountDialog" class="mt-4" :ui="{ width: 'sm', container: 'XL' }"
+                            <UModal v-model="showCountDialog" :ui="{ width: 'sm', container: 'XL' }" class="mt-4"
                                 :prevent-close="true" @close="showCountDialog = false">
                                 <UCard v-if="showCountDialog" @click.stop>
                                     <template #header>
@@ -141,7 +163,7 @@
                             </UButton>
 
                             <!-- Delete Confirmation Modal -->
-                            <UModal v-if="showDeleteModal" class="mt-4" v-model="showDeleteModal"
+                            <UModal v-if="showDeleteModal" v-model="showDeleteModal" class="mt-4"
                                 :ui="{ container: 'body' }">
                                 <UCard class="w-full max-w-md">
                                     <template #header>
@@ -180,7 +202,7 @@
                                 </UCard>
                             </UModal>
 
-
+                            <!-- Map -->
                             <LMap class="mt-4 rounded-2xl" style="height: 350px" :zoom="6" :center="latLong"
                                 :use-global-leaflet="false">
                                 <LTileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -217,9 +239,11 @@ const route = useRoute();
 const eventId = route.params.id;
 const toast = useToast();
 const authStore = useAuthStore();
+const config = useRuntimeConfig();
 
 // Data
 const event = ref(null);
+const eventImages = ref(['https://picsum.photos/800/400', 'https://picsum.photos/800/401', 'https://picsum.photos/800/402']);
 const loading = ref(true);
 const isRegistering = ref(false);
 const isDeleting = ref(false);
@@ -228,11 +252,12 @@ const attendeeCount = ref(1);
 const showCountDialog = ref(false);
 const showDeleteModal = ref(false);
 const organizerDetails = ref(null);
-let latLong = ref([19.091651970649906, 72.86280672834073]); // Default coordinates for Mumbai
+const latLong = ref([19.091651970649906, 72.86280672834073]); // Default coordinates for Mumbai
+
+// Computed properties
 const isOrganizer = computed(() =>
     authStore.user && event.value && authStore.user.username === event.value.organiser
 );
-const configs = useRuntimeConfig();
 
 // Computed property to determine the status text for registered users
 const eventStatusText = computed(() => {
@@ -296,12 +321,40 @@ const eventStatusColor = computed(() => {
 const fetchEventDetails = async () => {
     loading.value = true;
     try {
-        // Replace with your actual API endpoint
-        const response = await fetch(configs.public.backendUrl + `/event/${eventId}`);
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}`);
         if (!response.ok) {
             throw new Error('Failed to fetch event details');
         }
-        event.value = await response.json();
+
+        // Parse the new response format with event and images
+        const data = await response.json();
+        console.log("Full API response:", data);
+        event.value = data.event;
+
+        // Process images and create URLs
+        if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+            console.log("Raw image data:", data.images);
+            // Create image URLs based on backend URL pattern
+            eventImages.value = data.images.map(imageName =>
+                `${config.public.backendUrl}/uploads/${imageName}`
+            );
+            console.log("Image URLs created:", eventImages.value);
+        } else {
+            // Use placeholder images if no images are available
+            eventImages.value = [
+                'https://picsum.photos/640/360?random=1',
+                'https://picsum.photos/640/360?random=2'
+            ];
+            console.log("Using placeholder images");
+        }
+
+        // Set map location based on event coordinates
+        if (event.value.latitude && event.value.longitude) {
+            latLong.value = [
+                parseFloat(event.value.latitude),
+                parseFloat(event.value.longitude)
+            ];
+        }
 
         // Check if user is already registered
         await checkRegistrationStatus();
@@ -323,7 +376,7 @@ const fetchEventDetails = async () => {
 // Fetch organizer details
 const fetchOrganizerDetails = async () => {
     try {
-        const response = await fetch(configs.public.backendUrl + `/event/${eventId}/organizer`);
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/organizer`);
         if (response.ok) {
             const data = await response.json();
             // Make sure we handle missing data gracefully
@@ -356,7 +409,7 @@ const checkRegistrationStatus = async () => {
             return;
         }
 
-        const response = await fetch(configs.public.backendUrl + `/event/${eventId}/registered`, {
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/registered`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -411,7 +464,7 @@ const registerForEvent = async (event) => {
         // Close dialog
         showCountDialog.value = false;
 
-        const response = await fetch(configs.public.backendUrl + `/event/${eventId}/register`, {
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/register`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -448,13 +501,11 @@ const registerForEvent = async (event) => {
     }
 };
 
-// This function has been replaced by directly setting showDeleteModal to true in the button
-
 // Delete event
 const deleteEvent = async () => {
     isDeleting.value = true;
     try {
-        const response = await fetch(configs.public.backendUrl + `/event/delete/${eventId}`, {
+        const response = await fetch(config.public.backendUrl + `/event/delete/${eventId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${authStore.session}`,
