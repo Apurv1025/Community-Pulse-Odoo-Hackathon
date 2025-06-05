@@ -66,28 +66,16 @@
             </div>
         </div>
 
-        <div class="flex flex-col sm:flex-row gap-2 mt-auto">
+        <div class="flex justify-center mt-auto">
             <UButton 
                 color="success" 
                 variant="solid" 
-                block 
-                icon="i-lucide-check" 
+                icon="i-lucide-eye" 
                 size="md"
-                :loading="issue.processing && issue.actionType === 'approve'" 
+                :loading="issue.processing" 
                 :disabled="issue.processing"
-                @click="onApprove(issue.id)">
-                Approve
-            </UButton>
-            <UButton 
-                color="error" 
-                variant="outline" 
-                block 
-                icon="i-lucide-x" 
-                size="md"
-                :loading="issue.processing && issue.actionType === 'reject'" 
-                :disabled="issue.processing"
-                @click="onReject(issue.id)">
-                Reject
+                @click="onUnhide(issue.id)">
+                Unhide Issue
             </UButton>
         </div>
     </UCard>
@@ -105,15 +93,11 @@ defineProps({
     }
 });
 
-const emit = defineEmits(['approve', 'reject', 'flag']);
+const emit = defineEmits(['unhide', 'flag']);
 
 // Pass events up to parent component
-const onApprove = (issueId) => {
-    emit('approve', issueId);
-};
-
-const onReject = (issueId) => {
-    emit('reject', issueId);
+const onUnhide = (issueId) => {
+    emit('unhide', issueId);
 };
 
 const onFlag = (issueId) => {

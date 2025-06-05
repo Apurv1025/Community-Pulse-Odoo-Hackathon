@@ -87,7 +87,15 @@
                                     <UIcon name="i-lucide-user" class="w-5 h-5 mt-1 text-primary flex-shrink-0" />
                                     <div>
                                         <h3 class="font-medium">Organizer</h3>
-                                        <p class="text-sm text-gray-500">{{ event.organiser }}</p>
+                                        <div class="flex items-center gap-2">
+                                            <p class="text-sm text-gray-500">{{ event.organiser }}</p>
+                                            <UBadge v-if="organizerDetails && organizerDetails.isVerifiedOrganizer"
+                                                color="primary" variant="soft" size="xs"
+                                                class="flex items-center gap-1">
+                                                <UIcon name="i-lucide-check-circle" class="w-3 h-3" />
+                                                Verified
+                                            </UBadge>
+                                        </div>
                                         <p v-if="organizerDetails && organizerDetails.email"
                                             class="text-sm text-gray-500">
                                             <UIcon name="i-lucide-mail" class="inline w-3 h-3 mr-1" />
@@ -222,26 +230,14 @@
                             <!-- Upvote Button -->
                             <div class="flex flex-wrap gap-2 mt-3">
                                 <UButton :color="hasUpvoted ? 'primary' : 'gray'"
-                                    :variant="hasUpvoted ? 'solid' : 'outline'" class="flex-1" @click="toggleUpvote">
+                                    :variant="hasUpvoted ? 'solid' : 'outline'" class="w-full" @click="toggleUpvote">
                                     <template #leading>
                                         <UIcon
                                             :name="hasUpvoted ? 'i-lucide-thumbs-up-filled' : 'i-lucide-thumbs-up'" />
                                     </template>
                                     Upvote ({{ upvoteCount }})
                                 </UButton>
-
-                                <!-- Spam Button -->
-                                <UButton v-if="!isOrganizer" color="amber" variant="outline" class="flex-1"
-                                    @click="showReportModal = true">
-                                    <template #leading>
-                                        <UIcon name="i-lucide-flag" />
-                                    </template>
-                                    Report
-                                </UButton>
                             </div>
-                            <p v-if="!isOrganizer" class="text-xs text-gray-500 mt-1">
-                                Multiple reports will flag this event for review
-                            </p>
 
                             <!-- Share Button -->
                             <UButton block variant="outline" color="gray" icon="i-lucide-share-2" class="mt-3"
@@ -444,7 +440,7 @@ const eventStatusColor = computed(() => {
 
     // Event is happening now
     if (now >= startDate && (!endDate || now <= endDate)) {
-        return "green";
+        return "success";
     }
 
     // Event is in the future
@@ -710,7 +706,7 @@ const registerForEvent = async (event) => {
         toast.add({
             title: 'Success',
             description: 'You have registered for this event!',
-            color: 'green'
+            color: 'success'
         });
     } catch (error) {
         toast.add({
@@ -748,7 +744,7 @@ const deleteEvent = async () => {
         toast.add({
             title: 'Success',
             description: 'Event deleted successfully',
-            color: 'green'
+            color: 'success'
         });
 
         // Redirect to home page or events list
@@ -762,103 +758,6 @@ const deleteEvent = async () => {
         });
     } finally {
         isDeleting.value = false;
-    }
-};
-
-// Toggle upvote for an event
-const toggleUpvote = async () => {
-    if (!authStore.session) {
-        toast.add({
-            title: 'Authentication Required',
-            description: 'Please log in to upvote events',
-            color: 'amber'
-        });
-        return;
-    }
-
-    try {
-        const response = await fetch(`${config.public.backendUrl}/event/${eventId}/upvote`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authStore.session}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) throw new Error('Failed to upvote');
-
-        // Toggle upvote state locally and update count
-        if (!hasUpvoted.value) {
-            upvoteCount.value++;
-            hasUpvoted.value = true;
-            toast.add({
-                title: 'Upvoted',
-                description: 'You have upvoted this event',
-                color: 'green'
-            });
-        } else {
-            // This would require a separate API endpoint to remove an upvote
-            // For now, we'll just assume upvotes are permanent
-            toast.add({
-                title: 'Already Upvoted',
-                description: 'You have already upvoted this event',
-                color: 'blue'
-            });
-        }
-    } catch (error) {
-        toast.add({
-            title: 'Error',
-            description: error.message || 'Failed to upvote event',
-            color: 'error'
-        });
-    }
-};
-
-// Report event
-const reportEvent = async () => {
-    if (!authStore.session) {
-        toast.add({
-            title: 'Authentication Required',
-            description: 'Please log in to report events',
-            color: 'amber'
-        });
-        return;
-    }
-
-    isReporting.value = true;
-    try {
-        const response = await fetch(`${config.public.backendUrl}/event/${eventId}/report`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authStore.session}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to report event');
-        }
-
-        // Close the modal
-        showReportModal.value = false;
-
-        // Small delay
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        toast.add({
-            title: 'Reported',
-            description: 'You have reported this event',
-            color: 'green'
-        });
-    } catch (error) {
-        console.error('Error reporting event:', error);
-        toast.add({
-            title: 'Error',
-            description: error.message || 'Failed to report event',
-            color: 'error'
-        });
-    } finally {
-        isReporting.value = false;
     }
 };
 
@@ -886,7 +785,7 @@ const shareEvent = async () => {
         toast.add({
             title: 'Link Copied',
             description: 'Event link copied to clipboard',
-            color: 'green'
+            color: 'success'
         });
     }
 };
@@ -910,6 +809,57 @@ const getTotalAmount = () => {
     if (!tier) return 0;
 
     return tier.tier_price * selectedQuantity.value;
+};
+
+// Toggle upvote for the event
+const toggleUpvote = async () => {
+    try {
+        if (!authStore.session) {
+            toast.add({
+                title: 'Authentication Required',
+                description: 'Please log in to upvote events',
+                color: 'amber'
+            });
+            return;
+        }
+
+        // Don't do anything if the user has already upvoted
+        if (hasUpvoted.value) {
+            toast.add({
+                title: 'Already Upvoted',
+                description: 'You have already upvoted this event',
+                color: 'success'
+            });
+            return;
+        }
+
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/upvote`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authStore.session}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) throw new Error('Failed to update upvote status');
+
+        const data = await response.json();
+        hasUpvoted.value = true; // Always set to true as we don't allow removing upvotes
+        upvoteCount.value = data.upvote_count;
+
+        toast.add({
+            title: 'Upvoted!',
+            description: 'You upvoted this event',
+            color: 'success'
+        });
+    } catch (error) {
+        console.error('Error toggling upvote:', error);
+        toast.add({
+            title: 'Error',
+            description: error.message || 'Failed to update upvote status',
+            color: 'error'
+        });
+    }
 };
 
 // Initiate Razorpay payment
@@ -1063,7 +1013,7 @@ const processPaymentResponse = async (response) => {
             toast.add({
                 title: 'Payment Successful!',
                 description: `You have successfully purchased ${selectedQuantity.value} ticket(s)`,
-                color: 'green'
+                color: 'success'
             });
         } else {
             throw new Error('Payment verification failed');
@@ -1080,8 +1030,40 @@ const processPaymentResponse = async (response) => {
     }
 };
 
+// Fetch upvote status
+const fetchUpvoteStatus = async () => {
+    try {
+        if (!authStore.session) {
+            // If not logged in, only fetch upvote count
+            const countResponse = await fetch(config.public.backendUrl + `/event/${eventId}/upvotes`);
+            if (countResponse.ok) {
+                const data = await countResponse.json();
+                upvoteCount.value = data.upvote_count || 0;
+            }
+            return;
+        }
+
+        // If logged in, fetch both upvote status and count
+        const response = await fetch(config.public.backendUrl + `/event/${eventId}/upvote-status`, {
+            headers: {
+                'Authorization': `Bearer ${authStore.session}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            hasUpvoted.value = data.upvoted || false;
+            upvoteCount.value = data.upvote_count || 0;
+        }
+    } catch (error) {
+        console.error('Error fetching upvote status:', error);
+    }
+};
+
 // Fetch data on page load
 onMounted(() => {
     fetchEventDetails();
+    fetchUpvoteStatus();
 });
 </script>
