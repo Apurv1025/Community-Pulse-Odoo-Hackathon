@@ -22,9 +22,13 @@
           <UIcon name="i-lucide-tag" class="w-4 h-4" />
           <span>{{ eventType }}</span>
         </div>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 mb-1">
           <UIcon name="i-lucide-map-pin" class="w-4 h-4" />
           <span>{{ eventLocation }}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <UIcon name="i-lucide-thumbs-up" class="w-4 h-4" />
+          <span>{{ upvotes }} upvotes</span>
         </div>
       </div>
 
@@ -47,7 +51,9 @@
 </style>
 
 <script setup>
-defineProps({
+import { ref, onMounted } from 'vue';
+
+const props = defineProps({
   eventName: {
     type: String,
     default: 'Event Name'
@@ -75,6 +81,43 @@ defineProps({
   eventDescription: {
     type: String,
     default: ''
+  },
+  id: {
+    type: [Number, String],
+    default: null
+  }
+});
+
+const config = useRuntimeConfig();
+const upvotes = ref(0);
+
+const eventImg = ref(props.eventImg || '');
+
+// Fetch event data and upvotes count when component mounts
+onMounted(async () => {
+  if (props.id) {
+    try {
+      // Fetch upvotes
+      const upvotesResponse = await fetch(`${config.public.backendUrl}/event/${props.id}/upvotes`);
+      if (upvotesResponse.ok) {
+        upvotes.value = await upvotesResponse.json();
+      }
+
+      // Fetch complete event data to get images
+      const eventResponse = await fetch(`${config.public.backendUrl}/event/${props.id}`);
+      if (eventResponse.ok) {
+        const eventData = await eventResponse.json();
+        console.log(`Event ${props.id} data:`, eventData);
+
+        // Set image URL if images are available
+        if (eventData.images && Array.isArray(eventData.images) && eventData.images.length > 0) {
+          eventImg.value = `${config.public.backendUrl}/uploads/${eventData.images[0]}`;
+          console.log(`Event ${props.id} image URL set to: ${eventImg.value}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch event data:', error);
+    }
   }
 });
 </script>

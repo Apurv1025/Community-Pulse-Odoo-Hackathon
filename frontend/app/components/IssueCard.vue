@@ -2,7 +2,7 @@
   <NuxtLink :to="issueUrl" class="block">
     <UCard class="issue-card">
       <!-- Top Image -->
-      <img v-if="issueImg" :src="issueImg" :alt="issueCategory" class="w-full h-48 object-cover rounded-t-md mb-4">
+      <img v-if="issueImg && issueImg !== ''" :src="issueImg" :alt="issueCategory" class="w-full h-48 object-cover rounded-t-md mb-4">
       <div v-else class="w-full h-48 bg-gray-200 rounded-t-md mb-4 flex items-center justify-center">
         <UIcon name="i-lucide-alert-triangle" class="w-10 h-10 text-gray-400" />
       </div>
@@ -18,16 +18,16 @@
       <!-- Issue Details -->
       <div class="text-sm text-gray-500 mb-3">
         <div class="flex items-center gap-1 mb-1">
-          <UIcon name="i-lucide-calendar" class="w-4 h-4" />
-          <span>{{ issueDate }}</span>
-        </div>
-        <div class="flex items-center gap-1 mb-1">
           <UIcon name="i-lucide-user" class="w-4 h-4" />
           <span>{{ issueReporter }}</span>
         </div>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 mb-1">
           <UIcon name="i-lucide-map-pin" class="w-4 h-4" />
           <span>{{ issueLocation }}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <UIcon name="i-lucide-thumbs-up" class="w-4 h-4" />
+          <span>{{ upvotes }} upvotes</span>
         </div>
       </div>
 
@@ -50,7 +50,9 @@
 </style>
 
 <script setup>
-defineProps({
+import { ref, onMounted } from 'vue';
+
+const props = defineProps({
   issueCategory: {
     type: String,
     default: 'Issue Category'
@@ -82,6 +84,43 @@ defineProps({
   issueStatus: {
     type: String,
     default: 'open'
+  },
+  id: {
+    type: [Number, String], 
+    default: null
+  }
+});
+
+const config = useRuntimeConfig();
+const upvotes = ref(0);
+
+const issueImg = ref(props.issueImg || '');
+
+// Fetch issue data and upvotes count when component mounts
+onMounted(async () => {
+  if (props.id) {
+    try {
+      // Fetch upvotes
+      const upvotesResponse = await fetch(`${config.public.backendUrl}/issues/${props.id}/upvotes`);
+      if (upvotesResponse.ok) {
+        upvotes.value = await upvotesResponse.json();
+      }
+      
+      // Fetch complete issue data to get images
+      const issueResponse = await fetch(`${config.public.backendUrl}/issue/${props.id}`);
+      if (issueResponse.ok) {
+        const issueData = await issueResponse.json();
+        console.log(`Issue ${props.id} data:`, issueData);
+        
+        // Set image URL if images are available
+        if (issueData.images && Array.isArray(issueData.images) && issueData.images.length > 0) {
+          issueImg.value = `${config.public.backendUrl}/uploads/${issueData.images[0]}`;
+          console.log(`Issue ${props.id} image URL set to: ${issueImg.value}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch issue data:', error);
+    }
   }
 });
 
