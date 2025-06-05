@@ -4,44 +4,28 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-import schedule
-from datetime import datetime
-# from backend.event_tasks import schedule_event_reminder, send_event_update_notification
 
 load_dotenv()
 
-# Email configuration
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # Your Gmail address
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # Your App Password
+# Email configuration for reminders only
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USERNAME = "teamcommunitypulse319@gmail.com"
+SMTP_PASSWORD = "uynl zloc dvrf zcwk"  # App password
 
-import smtplib
-# creates SMTP session
-
-def send_event_notifications(recipient: str, event_name: str, event_details: dict) -> bool:
-    """Send event notifications using SMTP"""
-    
+def send_event_reminder(recipient: str, event_name: str, event_details: dict) -> bool:
+    """
+    Send REMINDER notifications for events happening the next day.
+    This function is completely separate from update notifications.
+    """
     try:
-        # Validate credentials
-        if not SMTP_USERNAME or not SMTP_PASSWORD:
-            print("Error: Email credentials not configured in .env file")
-            return False
-
-        # Create message container
+        # Create message container for reminder
         msg = MIMEMultipart()
-        msg['From'] = "teamcommunitypulse319@gmail.com"
+        msg['From'] = SMTP_USERNAME
         msg['To'] = recipient
+        msg['Subject'] = f"Tomorrow's Event: {event_name}"
         
-        # Determine if this is an update or a reminder based on event_name
-        is_update = event_name.startswith("UPDATE:")
-        print(is_update)
-        if is_update:
-            msg['Subject'] = event_name  # "UPDATE: Event Name"
-        else:
-            msg['Subject'] = f"Tomorrow's Event: {event_name}"
-        
-        # Create the body of the message with safe dictionary access
+        # Create the body specifically for reminders
         location_parts = [
             event_details.get('address', ''),
             event_details.get('city', ''),
@@ -49,17 +33,69 @@ def send_event_notifications(recipient: str, event_name: str, event_details: dic
         ]
         location = ', '.join(filter(None, location_parts))
         
-        # Different body templates for updates vs reminders
-        if is_update:
-            # This is an update notification
-            update_messages = event_details.get('updates', [])
-            updates_text = "\n".join([f"- {update}" for update in update_messages])
-            
-            body = f"""
+        # Reminder-specific template
+        body = f"""
+Hello!
+
+This is a reminder that {event_name} is happening tomorrow!
+
+Event Details:
+- Time: {event_details.get('start_time', 'TBD')}
+- Location: {location or 'TBD'}
+- Description: {event_details.get('description', '')}
+
+We look forward to seeing you there!
+
+Best regards,
+Community Pulse Team
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Send the reminder email
+        s = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        s.starttls()
+        s.login(SMTP_USERNAME, SMTP_PASSWORD)
+        s.sendmail(SMTP_USERNAME, recipient, msg.as_string())
+        s.quit()
+        
+        print(f"✅ Reminder email sent to {recipient} for event: {event_name}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send reminder email: {str(e)}")
+        return False
+
+# Add the missing function that's being imported in main.py
+def send_event_notifications(recipient: str, event_name: str, event_details: dict) -> bool:
+    """
+    Send UPDATE notifications for events that have been modified.
+    This function is completely separate from reminder notifications.
+    """
+    try:
+        # Create message container for updates
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USERNAME
+        msg['To'] = recipient
+        msg['Subject'] = event_name  # Subject is passed with "UPDATE: " prefix already
+        
+        # Create the body specifically for updates
+        location_parts = [
+            event_details.get('address', ''),
+            event_details.get('city', ''),
+            event_details.get('state', '')
+        ]
+        location = ', '.join(filter(None, location_parts))
+        
+        # Include update-specific information
+        updates_list = event_details.get('updates', [])
+        updates_text = "\n".join([f"- {update}" for update in updates_list]) if updates_list else "No specific changes provided."
+        
+        # Update-specific template
+        body = f"""
 Hello!
 
 An event you're following has been updated:
-{event_name.replace("UPDATE: ", "")}
 
 The following changes have been made:
 {updates_text}
@@ -72,48 +108,22 @@ We look forward to seeing you there!
 
 Best regards,
 Community Pulse Team
-            """
-        else:
-            # This is a regular reminder
-            body = f"""
-Hello!
-
-This is a reminder that {event_name} is happening tomorrow!
-
-Event Details:
-- Time: {event_details.get('start_time', 'TBD')}
-- Location: {location or 'TBD'}
-
-We look forward to seeing you there!
-
-Best regards,
-Community Pulse Team
-            """
+        """
         
         msg.attach(MIMEText(body, 'plain'))
-        s = smtplib.SMTP('smtp.gmail.com', 587)
-# start TLS for security
+        
+        # Send the update email
+        s = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         s.starttls()
-# Authentication
-        # s.login("rashinkarapurv@gmail.com", "kmoi jzmc bmmm hwzf")
-        try:
-            s.login("teamcommunitypulse319@gmail.com", "uynl zloc dvrf zcwk")
-        except smtplib.SMTPAuthenticationError:
-            print("""
-Authentication failed! Please check:
-1. Your App Password is correctly set in .env file
-2. You're using App Password, not regular Gmail password
-3. Your Gmail account has 2-Step Verification enabled
-            """)
-            return False
-            
-        text = msg.as_string()
-        s.sendmail(str(SMTP_USERNAME), recipient, text)
-    
+        s.login(SMTP_USERNAME, SMTP_PASSWORD)
+        s.sendmail(SMTP_USERNAME, recipient, msg.as_string())
+        s.quit()
+        
+        print(f"✅ Update notification sent to {recipient} for event: {event_name}")
         return True
         
     except Exception as e:
-        print(f"Failed to send email: {str(e)}")
+        print(f"❌ Failed to send update notification: {str(e)}")
         return False
 
 

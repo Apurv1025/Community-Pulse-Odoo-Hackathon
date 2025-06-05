@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, status, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.email_tasks import schedule_event_reminder
+from backend.email_tasks import schedule_event_reminders
 
 from sqlalchemy import select, or_, and_, func
 
@@ -43,15 +43,6 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-event_details = {
-    "start_time": "6:40",
-    "address": "address",
-    "city": "city",
-    "state": "state",
-}
-
-# Schedule the task
-schedule_event_reminder.delay("rashinkarapurv@gmail.com", 1)
 
 
 @app.on_event("startup")
@@ -601,8 +592,8 @@ async def register_user_to_event(
         session.add(event_registration)
         session.commit()
 
-        # Schedule the task
-        schedule_event_reminder.delay(current_user.email, event_id)
+        # Schedule reminder using the correct function name
+        schedule_event_reminders.delay(current_user.email, event_id)
 
         new_follow = EventFollowing(event_id=event_id, username=current_user.username)
         session.add(new_follow)
@@ -1502,62 +1493,81 @@ def send_event_update_emails(
 
 
 
+# Update this function to use the separated update notification system
 def notify_users_of_event_update(session, event_id, update_record_id):
-   """
-   Send email notifications to all users registered for an event when it gets updated.
-   """
-   try:
-       # Get the event
-       db_event = session.get(Event, event_id)
-       if not db_event:
-           print(f"Event {event_id} not found")
-           return 0
-          
-       # Verify the update record exists
-       update_record = session.get(EventUpdates, update_record_id)
-       if not update_record:
-           print(f"Update record {update_record_id} not found")
-           return 0
-      
-       # Get all users registered for this event WITH their email addresses
-       registrations = session.exec(
-           select(EventRegistered, User.email)
-           .join(User, EventRegistered.username == User.username)
-           .where(EventRegistered.event_id == event_id)
-       ).all()
-      
-       if not registrations:
-           print(f"No registered users found for event {event_id}")
-           return 0
-      
-       # Send emails to each registered user using the dedicated update task
-       sent_count = 0
-       for reg_tuple in registrations:
-           registration, email = reg_tuple  # Unpack the tuple
-           if not email:
-               print(f"No email for user {registration.username}")
-               continue
-          
-           try:
-               # IMPORTANT: Import at module level instead
-               from backend.email_tasks import send_event_update_notification
-               
-               # Queue the dedicated update email task
-               print(f"Queueing email to {email} for event {event_id}")
-               send_event_update_notification.delay(
-                   recipient_email=email,
-                   event_id=event_id,
-                   update_id=update_record_id
-               )
-               sent_count += 1
-           except Exception as e:
-               print(f"Failed to queue update email to {email}: {str(e)}")
-      
-       print(f"Queued {sent_count} update notifications for event {event_id}")
-       return sent_count
-   except Exception as e:
-       print(f"Error in notify_users_of_event_update: {str(e)}")
-       return 0
+    """
+    Send email notifications to users registered for an event when it's updated.
+    Uses the dedicated event update notification system.
+    """
+    print(f"Starting update notification process for event {event_id}, update {update_record_id}")
+    
+    try:
+        # Verify data integrity
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            print(f"ERROR: Event {event_id} not found")
+            return 0
+        
+        update_record = session.get(EventUpdates, update_record_id)
+        if not update_record:
+            print(f"ERROR: Update record {update_record_id} not found")
+            return 0
+        
+        # Get registered users and followers
+        registered_users_query = (
+            select(EventRegistered, User)
+            .join(User, EventRegistered.username == User.username)
+            .where(EventRegistered.event_id == event_id)
+        )
+        
+        following_users_query = (
+            select(EventFollowing, User)
+            .join(User, EventFollowing.username == User.username)
+            .where(EventFollowing.event_id == event_id)
+        )
+        
+        # Collect unique recipients
+        recipients = {}
+        
+        for reg, user in session.exec(registered_users_query).all():
+            if user.email:
+                recipients[user.username] = user.email
+        
+        for follow, user in session.exec(following_users_query).all():
+            if user.email and user.username not in recipients:
+                recipients[user.username] = user.email
+        
+        # If no recipients, return early
+        if not recipients:
+            print("No recipients found with valid emails")
+            return 0
+        
+        print(f"Sending update notifications to {len(recipients)} unique recipients")
+        
+        # Import the dedicated update task
+        from backend.email_tasks import send_event_update_notification
+        
+        # Queue tasks for each recipient
+        sent_count = 0
+        for username, email in recipients.items():
+            try:
+                print(f"Queueing update notification for {username} ({email})")
+                send_event_update_notification.delay(
+                    recipient_email=email,
+                    event_id=event_id,
+                    update_id=update_record_id
+                )
+                sent_count += 1
+            except Exception as e:
+                print(f"Failed to queue update notification for {username}: {str(e)}")
+        
+        print(f"Successfully queued {sent_count} update notifications")
+        return sent_count
+    except Exception as e:
+        print(f"ERROR in notify_users_of_event_update: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return 0
 
 @app.get("/event/{event_id}/updates", response_model=list[dict])
 async def get_event_updates(event_id: int, limit: int = 10):
@@ -2025,3 +2035,28 @@ async def get_user_tickets(username: str):
             
         return tickets
 
+@app.get("/admin/unhide/issue/{issue_id}", response_model=Issue)
+async def unhide_issue(
+    issue_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Unhide a community issue. Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to unhide issues"
+        )
+    
+    with Session(engine) as session:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        
+        # Unhide the issue
+        db_issue.hidden = False
+        session.add(db_issue)
+        session.commit()
+        session.refresh(db_issue)
+        
+        return db_issue
