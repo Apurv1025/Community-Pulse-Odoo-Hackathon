@@ -31,7 +31,7 @@
             </div>
 
             <!-- Square Image -->
-            <div v-if="event.image_url" class="w-24 h-24 flex-shrink-0 overflow-hidden"
+            <div v-if="event.image" class="w-24 h-24 flex-shrink-0 overflow-hidden"
                 style="min-width: 96px; min-height: 96px; max-width: 96px; max-height: 96px; flex: 0 0 96px; display: block;">
                 <img :src="event.image_url" :alt="event.event_name" class="w-full h-full object-cover rounded-md"
                     style="object-fit: cover; width: 100%; height: 100%;">
@@ -64,6 +64,10 @@ defineProps({
     event: {
         type: Object,
         required: true
+    },
+    imageUrl: {
+        type: String,
+        default: ''
     }
 });
 

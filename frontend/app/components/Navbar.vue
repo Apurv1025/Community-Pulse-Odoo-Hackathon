@@ -30,6 +30,12 @@
                         Create Event
                     </UButton>
 
+                    <!-- Create Issue button visible only to logged-in users -->
+                    <UButton v-if="authStore.user" to="/issue/create" icon="i-lucide-alert-triangle" class="mr-2"
+                        color="warning" variant="soft">
+                        Report Issue
+                    </UButton>
+
                     <!-- Conditional Update/Delete links for event organizers -->
                     <template v-if="showEventControls">
                         <NuxtLink :to="`/event/${currentEventId}/update`"

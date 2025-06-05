@@ -2,9 +2,19 @@
 import type { TabsItem } from '@nuxt/ui'
 import { useAuthStore } from "../../stores/authStore";
 
+
 const store = useAuthStore()
 const router = useRouter()
 const toast = useToast()
+
+// Check if the user is admin and redirect accordingly
+setTimeout(() => {
+  if (store.user && store.user.isAdmin) {
+    router.push('/admin')
+  } else if (store.user) {
+    router.push('/')
+  }
+}, 100)
 
 const items = [
   {

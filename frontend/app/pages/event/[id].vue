@@ -219,6 +219,30 @@
                                 </UCard>
                             </UModal>
 
+                            <!-- Upvote Button -->
+                            <div class="flex flex-wrap gap-2 mt-3">
+                                <UButton :color="hasUpvoted ? 'primary' : 'gray'"
+                                    :variant="hasUpvoted ? 'solid' : 'outline'" class="flex-1" @click="toggleUpvote">
+                                    <template #leading>
+                                        <UIcon
+                                            :name="hasUpvoted ? 'i-lucide-thumbs-up-filled' : 'i-lucide-thumbs-up'" />
+                                    </template>
+                                    Upvote ({{ upvoteCount }})
+                                </UButton>
+
+                                <!-- Spam Button -->
+                                <UButton v-if="!isOrganizer" color="amber" variant="outline" class="flex-1"
+                                    @click="showReportModal = true">
+                                    <template #leading>
+                                        <UIcon name="i-lucide-flag" />
+                                    </template>
+                                    Report
+                                </UButton>
+                            </div>
+                            <p v-if="!isOrganizer" class="text-xs text-gray-500 mt-1">
+                                Multiple reports will flag this event for review
+                            </p>
+
                             <!-- Share Button -->
                             <UButton block variant="outline" color="gray" icon="i-lucide-share-2" class="mt-3"
                                 @click="shareEvent">
@@ -259,6 +283,44 @@
                                             <UButton color="error" variant="solid" icon="i-lucide-trash-2"
                                                 :loading="isDeleting" @click="deleteEvent">
                                                 Delete Event
+                                            </UButton>
+                                        </div>
+                                    </template>
+                                </UCard>
+                            </UModal>
+
+                            <!-- Report Modal -->
+                            <UModal v-if="showReportModal" v-model="showReportModal" class="mt-4"
+                                :ui="{ container: 'body' }">
+                                <UCard class="w-full max-w-md">
+                                    <template #header>
+                                        <div class="flex items-center">
+                                            <UIcon name="i-lucide-flag" class="w-5 h-5 mr-2 text-amber-500" />
+                                            <h3 class="text-lg font-medium">Report Event</h3>
+                                        </div>
+                                    </template>
+
+                                    <div class="py-4">
+                                        <p class="text-gray-400 mb-4">
+                                            Are you sure you want to report this event?
+                                        </p>
+                                        <p
+                                            class="text-sm text-gray-500 bg-blue-50 p-3 rounded-md border border-blue-200">
+                                            <UIcon name="i-lucide-info"
+                                                class="w-4 h-4 inline-block mr-1 text-blue-500" />
+                                            If multiple users report this event, it may be flagged for review by
+                                            administrators.
+                                        </p>
+                                    </div>
+
+                                    <template #footer>
+                                        <div class="flex justify-end gap-3">
+                                            <UButton color="gray" variant="ghost" @click="showReportModal = false">
+                                                Cancel
+                                            </UButton>
+                                            <UButton color="amber" variant="solid" icon="i-lucide-flag"
+                                                :loading="isReporting" @click="reportEvent">
+                                                Report Event
                                             </UButton>
                                         </div>
                                     </template>
@@ -314,6 +376,7 @@ const isRegistered = ref(false);
 const attendeeCount = ref(1);
 const showCountDialog = ref(false);
 const showDeleteModal = ref(false);
+const showReportModal = ref(false);
 const organizerDetails = ref(null);
 const latLong = ref([19.091651970649906, 72.86280672834073]); // Default coordinates for Mumbai
 const tiers = ref([]);
@@ -321,6 +384,9 @@ const selectedTierId = ref(null);
 const showTierDialog = ref(false);
 const isPaymentProcessing = ref(false);
 const selectedQuantity = ref(1);
+const upvoteCount = ref(0);
+const hasUpvoted = ref(false);
+const isReporting = ref(false);
 
 // Computed properties
 const isOrganizer = computed(() =>
@@ -696,6 +762,103 @@ const deleteEvent = async () => {
         });
     } finally {
         isDeleting.value = false;
+    }
+};
+
+// Toggle upvote for an event
+const toggleUpvote = async () => {
+    if (!authStore.session) {
+        toast.add({
+            title: 'Authentication Required',
+            description: 'Please log in to upvote events',
+            color: 'amber'
+        });
+        return;
+    }
+
+    try {
+        const response = await fetch(`${config.public.backendUrl}/event/${eventId}/upvote`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authStore.session}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) throw new Error('Failed to upvote');
+
+        // Toggle upvote state locally and update count
+        if (!hasUpvoted.value) {
+            upvoteCount.value++;
+            hasUpvoted.value = true;
+            toast.add({
+                title: 'Upvoted',
+                description: 'You have upvoted this event',
+                color: 'green'
+            });
+        } else {
+            // This would require a separate API endpoint to remove an upvote
+            // For now, we'll just assume upvotes are permanent
+            toast.add({
+                title: 'Already Upvoted',
+                description: 'You have already upvoted this event',
+                color: 'blue'
+            });
+        }
+    } catch (error) {
+        toast.add({
+            title: 'Error',
+            description: error.message || 'Failed to upvote event',
+            color: 'error'
+        });
+    }
+};
+
+// Report event
+const reportEvent = async () => {
+    if (!authStore.session) {
+        toast.add({
+            title: 'Authentication Required',
+            description: 'Please log in to report events',
+            color: 'amber'
+        });
+        return;
+    }
+
+    isReporting.value = true;
+    try {
+        const response = await fetch(`${config.public.backendUrl}/event/${eventId}/report`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authStore.session}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to report event');
+        }
+
+        // Close the modal
+        showReportModal.value = false;
+
+        // Small delay
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        toast.add({
+            title: 'Reported',
+            description: 'You have reported this event',
+            color: 'green'
+        });
+    } catch (error) {
+        console.error('Error reporting event:', error);
+        toast.add({
+            title: 'Error',
+            description: error.message || 'Failed to report event',
+            color: 'error'
+        });
+    } finally {
+        isReporting.value = false;
     }
 };
 

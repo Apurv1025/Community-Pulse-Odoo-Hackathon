@@ -67,6 +67,7 @@ const fetchEvents = async () => {
         }
 
         const data = await response.json();
+        console.log(data)
         events.value = data.map(event => ({
             ...event,
             processing: false,

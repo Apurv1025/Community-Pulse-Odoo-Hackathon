@@ -23,8 +23,8 @@
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4">
         <EventCard v-for="event in events" :key="event.id" :event-name="event.event_name"
           :event-date="formatDate(event.start_date)" :event-location="`${event.city}, ${event.state}`"
-          :event-img="event.img_url" :event-url="`/event/${event.id}`" :event-type="event.category"
-          :event-description="event.event_description" />
+          :event-img="`http://localhost:8000/uploads/${event.images[0]}`" :event-url="`/event/${event.id}`"
+          :event-type="event.category" :event-description="event.event_description" />
       </div>
     </UCard>
   </UContainer>
