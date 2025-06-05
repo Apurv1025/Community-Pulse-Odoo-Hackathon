@@ -324,10 +324,11 @@ class EventResponse(BaseModel):
         from_attributes = True
 
 
-@app.get("/events/", response_model=list[EventResponse])
+@app.get("/events/")
 async def get_all_events():
     """
-    Retrieve all events from the database that are accepted and not flagged.
+    Retrieve all events from the database that are accepted and not flagged,
+    along with their associated images.
     """
     with Session(engine) as session:
         events = (
@@ -337,8 +338,31 @@ async def get_all_events():
             .scalars()
             .all()
         )
-        # Convert ORM objects to Pydantic models
-        return [EventResponse.from_orm(event) for event in events]
+        
+        results = []
+        
+        # Process each event and add its images
+        for event in events:
+            # Convert ORM object to Pydantic model
+            event_data = EventResponse.from_orm(event)
+            
+            # Fetch images for this event
+            images = (
+                session.exec(select(UploadEvent).where(UploadEvent.event_id == event.id))
+                .scalars()
+                .all()
+            )
+            
+            # Extract image filenames
+            image_filenames = [img.filename for img in images]
+            
+            # Create a dictionary with event data and images
+            event_dict = event_data.dict()
+            event_dict["images"] = image_filenames
+            
+            results.append(event_dict)
+            
+        return results
 
 
 @app.get("/event/{event_id}", response_model=dict)
@@ -1134,16 +1158,41 @@ async def create_issue(
         return new_issue
 
 
-@app.get("/issues/", response_model=list[Issue])
+@app.get("/issues/")
 async def get_all_issues():
     """
-    Retrieve all community issues that are not hidden.
+    Retrieve all community issues that are not hidden,
+    along with their associated images.
     """
     with Session(engine) as session:
         issues = (
             session.exec(select(Issue).where(Issue.hidden == False)).scalars().all()
         )
-        return issues
+        
+        from fastapi.encoders import jsonable_encoder
+        results = []
+        
+        # Process each issue and add its images
+        for issue in issues:
+            # Convert issue to dictionary
+            issue_dict = jsonable_encoder(issue)
+            
+            # Fetch images for this issue
+            images = (
+                session.exec(select(UploadIssue).where(UploadIssue.issue_id == issue.id))
+                .scalars()
+                .all()
+            )
+            
+            # Extract image filenames
+            image_filenames = [img.filename for img in images]
+            
+            # Add images to issue data
+            issue_dict["images"] = image_filenames
+            
+            results.append(issue_dict)
+            
+        return results
 
 
 @app.get("/admin/issues/hidden", response_model=list[Issue])
