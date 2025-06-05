@@ -1310,13 +1310,15 @@ async def delete_issue(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """
-    Delete a community issue. Only the creator can delete their issue.
+    Delete a community issue. Only the creator of the issue or an admin can delete it.
     """
     with Session(engine) as session:
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        if db_issue.creator != current_user.username:
+        
+        # Check if the current user is the creator of this issue or an admin
+        if db_issue.personal != current_user.username and not current_user.isAdmin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this issue"
             )
@@ -1325,7 +1327,6 @@ async def delete_issue(
         session.commit()
 
         return {"detail": "Issue deleted successfully"}
-
 
 @app.get("/issues/{issue_id}/upvotes", response_model=int)
 async def get_issue_upvotes(issue_id: int):
