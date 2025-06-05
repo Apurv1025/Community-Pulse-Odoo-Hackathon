@@ -1113,16 +1113,7 @@ async def get_all_hidden_issues(
        return issues
 
 
-@app.get("/issues/{issue_id}", response_model=Issue)
-async def get_issue(issue_id: int):
-   """
-   Retrieve a specific community issue by its ID.
-   """
-   with Session(engine) as session:
-       issue = session.get(Issue, issue_id)
-       if not issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-       return issue
+
   
 class IssueUpdateModel(BaseModel):
     category: Optional[str] = None
@@ -1452,6 +1443,9 @@ async def search_events_by_filter(
     category: Optional[str] = None,
     event_date: Optional[date] = None,
     sort_by: Optional[SortOption] = SortOption.RECENT,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    radius: Optional[float] = 5000,  # Default 5km radius, optional parameter
 ):
     """
     Advanced search for events with multiple filters and sorting options.
@@ -1461,6 +1455,9 @@ async def search_events_by_filter(
     - category: Filter by event category
     - event_date: Filter by specific date (YYYY-MM-DD)
     - sort_by: Sort results by 'recent' (default) or 'upvoted'
+    - latitude: Optional latitude coordinate for location-based search
+    - longitude: Optional longitude coordinate for location-based search
+    - radius: Search radius in meters (default: 5000m = 5km)
     """
     with Session(engine) as session:
         # Start building the query
@@ -1469,25 +1466,40 @@ async def search_events_by_filter(
             Event.isFlagged == False
         )
         
-        # Apply searchterm filter if provided
+        # Apply location-based filtering if coordinates are provided
+        if latitude is not None and longitude is not None:
+            # Convert radius from meters to degrees
+            lat_offset = radius / 111000  # 111,000 meters per degree latitude
+            lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+
+            lat_min = latitude - lat_offset
+            lat_max = latitude + lat_offset
+            lon_min = longitude - lon_offset
+            lon_max = longitude + lon_offset
+            
+            # Add geographic bounds to query
+            query = query.where(
+                Event.latitude >= lat_min,
+                Event.latitude <= lat_max,
+                Event.longitude >= lon_min,
+                Event.longitude <= lon_max
+            )
+        
+        # Apply remaining filters (existing code)
         if term:
             query = query.where(func.lower(Event.event_name).contains(term.lower()))
         
-        # Apply category filter if provided
         if category:
             query = query.where(Event.category == category)
         
-        # Apply date filter if provided
         if event_date:
-            # Find events on this specific date
             query = query.where(
                 func.date(Event.start_date) <= event_date,
                 func.date(Event.end_date) >= event_date
             )
         
-        # Apply sorting
+        # Apply sorting (existing code with modifications for upvoted case)
         if sort_by == SortOption.UPVOTED:
-            # Count upvotes for each event using a subquery
             upvote_counts = (
                 select(
                     EventUpvotes.event_id,
@@ -1497,7 +1509,7 @@ async def search_events_by_filter(
                 .subquery()
             )
             
-            # Join with the upvote counts and order by count descending
+            # Join with upvote counts and maintain all filters
             query = (
                 select(Event)
                 .outerjoin(
@@ -1508,21 +1520,31 @@ async def search_events_by_filter(
                     Event.isAccepted == True,
                     Event.isFlagged == False
                 )
-                # Apply all the same filters
                 .order_by(
                     func.coalesce(upvote_counts.c.upvote_count, 0).desc()
                 )
             )
             
-            # Re-apply all the same filters
+            # Re-apply all filters for the joined query
             if term:
                 query = query.where(func.lower(Event.event_name).contains(term.lower()))
+            
             if category:
                 query = query.where(Event.category == category)
+            
             if event_date:
                 query = query.where(
                     func.date(Event.start_date) <= event_date,
                     func.date(Event.end_date) >= event_date
+                )
+                
+            # Re-apply location filtering if needed
+            if latitude is not None and longitude is not None:
+                query = query.where(
+                    Event.latitude >= lat_min,
+                    Event.latitude <= lat_max,
+                    Event.longitude >= lon_min,
+                    Event.longitude <= lon_max
                 )
         else:
             # Sort by most recent event start date
@@ -1533,24 +1555,26 @@ async def search_events_by_filter(
         
         # Convert to response model
         return [EventResponse.from_orm(event) for event in events]
-    
-class IssueSortOption(str, Enum):
-    RECENT = "recent"
-    UPVOTED = "upvoted"
 
 @app.get("/issues/search", response_model=list[Issue])
 async def search_issues_by_filter(
     term: Optional[str] = None,
     category: Optional[str] = None,
-    sort_by: Optional[IssueSortOption] = IssueSortOption.RECENT,
+    sort_by: Optional[SortOption] = SortOption.RECENT,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    radius: Optional[float] = 5000,  # Default 5km radius, optional parameter
 ):
     """
-    Advanced search for community issues with multiple filters and sorting options.
+    Search for issues with multiple filters including location-based filtering.
     
     Parameters:
-    - term: Search term for issue description (case-insensitive, partial match)
+    - term: Search term for issue description/personal notes
     - category: Filter by issue category
     - sort_by: Sort results by 'recent' (default) or 'upvoted'
+    - latitude: Optional latitude coordinate for location-based search
+    - longitude: Optional longitude coordinate for location-based search
+    - radius: Search radius in meters (default: 5000m = 5km)
     """
     with Session(engine) as session:
         # Start building the query
@@ -1558,6 +1582,25 @@ async def search_issues_by_filter(
             Issue.hidden == False
         )
         
+        # Apply location-based filtering if coordinates are provided
+        if latitude is not None and longitude is not None:
+            # Convert radius from meters to degrees
+            lat_offset = radius / 111000  # 111,000 meters per degree latitude
+            lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+
+            lat_min = latitude - lat_offset
+            lat_max = latitude + lat_offset
+            lon_min = longitude - lon_offset
+            lon_max = longitude + lon_offset
+            
+            # Add geographic bounds to query
+            query = query.where(
+                Issue.latitude >= lat_min,
+                Issue.latitude <= lat_max,
+                Issue.longitude >= lon_min,
+                Issue.longitude <= lon_max
+            )
+            
         # Apply search term filter if provided
         if term:
             query = query.where(
@@ -1572,8 +1615,7 @@ async def search_issues_by_filter(
             query = query.where(Issue.category == category)
         
         # Apply sorting
-        if sort_by == IssueSortOption.UPVOTED:
-            # Count upvotes for each issue using a subquery
+        if sort_by == SortOption.UPVOTED:
             upvote_counts = (
                 select(
                     IssueUpvotes.issue_id,
@@ -1583,7 +1625,7 @@ async def search_issues_by_filter(
                 .subquery()
             )
             
-            # Join with the upvote counts and order by count descending
+            # Join with upvote counts and maintain all filters
             query = (
                 select(Issue)
                 .outerjoin(
@@ -1593,7 +1635,6 @@ async def search_issues_by_filter(
                 .where(
                     Issue.hidden == False
                 )
-                # Apply all the same filters
                 .order_by(
                     func.coalesce(upvote_counts.c.upvote_count, 0).desc()
                 )
@@ -1610,18 +1651,28 @@ async def search_issues_by_filter(
             if category:
                 query = query.where(Issue.category == category)
         else:
-            # Sort by most recent issues (assuming issues have a creation_date field)
-            # If not, you can adjust this to use the ID (higher ID = more recent)
+            # Sort by most recent issues
             if hasattr(Issue, 'created_at'):
                 query = query.order_by(Issue.created_at.desc())
             else:
-                query = query.order_by(Issue.id.desc())  # Default to ID sorting
+                query = query.order_by(Issue.id.desc())
         
         # Execute query and get results
         issues = session.exec(query).scalars().all()
         
         return issues
-    
+@app.get("/issue/{issue_id}", response_model=Issue)
+async def get_issue(issue_id: int):
+   """
+   Retrieve a specific community issue by its ID.
+   """
+   with Session(engine) as session:
+       issue = session.get(Issue, issue_id)
+       if not issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+       return issue
+   
+
 import math
 from pydantic import BaseModel
 from typing import Optional
@@ -1630,11 +1681,11 @@ from typing import Optional
 async def get_nearby_events(
     latitude: float,
     longitude: float,
-    radius: float = 5000  # Default radius in meters (5 km)
 ):
     """
-    Get events within the specified radius of the given coordinates.
+    Get events within a 5 km radius of the given coordinates.
     """
+    radius = 5000  # Hardcoded radius in meters (5 km)
     with Session(engine) as session:
         # Convert radius from meters to degrees
         lat_offset = radius / 111000  # 111,000 meters per degree latitude
@@ -1664,11 +1715,11 @@ async def get_nearby_events(
 async def get_nearby_issues(
     latitude: float,
     longitude: float,
-    radius: float = 5000  # Default radius in meters (5 km)
 ):
     """
-    Get issues within the specified radius of the given coordinates.
+    Get issues within a 5 km radius of the given coordinates.
     """
+    radius = 5000  # Hardcoded radius in meters (5 km)
     with Session(engine) as session:
         # Convert radius from meters to degrees
         lat_offset = radius / 111000  # 111,000 meters per degree latitude
