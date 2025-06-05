@@ -1228,24 +1228,77 @@ async def update_issue(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """
-    Update a community issue. Only the creator can update their issue.
-    Only provided fields will be updated.
+    Update a community issue. Only provided fields will be updated.
+    Records changes in IssueUpdates table for audit trail.
     """
     with Session(engine) as session:
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-
+        
+        # Store original values to track changes
+        changes = []
         update_data = issue_update.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_issue, key, value)
-
-        session.add(db_issue)
-        session.commit()
-        session.refresh(db_issue)
-
+        
+        if not update_data:
+            return db_issue  # No changes if no fields provided
+        
+        # Track changes and update fields
+        for key, new_value in update_data.items():
+            if hasattr(db_issue, key):
+                old_value = getattr(db_issue, key)
+                
+                # Only record if value actually changed
+                if old_value != new_value:
+                    # Convert datetime objects to strings for readability
+                    old_display = old_value
+                    new_display = new_value
+                    if isinstance(old_value, datetime):
+                        old_display = old_value.strftime("%Y-%m-%d %H:%M")
+                    if isinstance(new_value, datetime):
+                        new_display = new_value.strftime("%Y-%m-%d %H:%M")
+                    
+                    # Record the change
+                    changes.append({
+                        "field": key,
+                        "from": str(old_display),
+                        "to": str(new_display)
+                    })
+                    
+                    # Update the field
+                    setattr(db_issue, key, new_value)
+        
+        # Only proceed if there were actual changes
+        if changes:
+            # Update the issue
+            session.add(db_issue)
+            
+            # Create human-readable update messages
+            update_messages = []
+            for change in changes:
+                update_messages.append(
+                    f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
+                )
+            
+            # Create a record in IssueUpdates
+            issue_update_record = IssueUpdates(
+                issue_id=issue_id,
+                username=current_user.username,
+                LastReminder=datetime.now(),
+                LastUpdate=json.dumps({
+                    "changes": changes,
+                    "summary": update_messages
+                })
+            )
+            
+            session.add(issue_update_record)
+            session.commit()
+            session.refresh(db_issue)
+            
+            # Optional: Add notification logic here if you want to notify users
+            # about issue updates similar to event updates
+        
         return db_issue
-
 
 @app.delete("/issues/delete/{issue_id}", response_model=dict)
 async def delete_issue(
