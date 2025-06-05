@@ -316,11 +316,17 @@ class EventResponse(BaseModel):
 
 
 @app.get("/events/")
-async def get_all_events():
+async def get_all_events(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     """
     Retrieve all events from the database that are accepted and not flagged,
     along with their associated images.
+    Disabled users cannot see any events.
     """
+    if getattr(current_user, "disabled", False):
+        raise HTTPException(status_code=403, detail="User is banned and cannot view events")
+
     with Session(engine) as session:
         events = (
             session.exec(
@@ -2060,3 +2066,71 @@ async def unhide_issue(
         session.refresh(db_issue)
         
         return db_issue
+    
+@app.post("/allusers",response_model=list[User])
+async def get_all_users(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Retrieve all users in the system. Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view all users"
+        )
+    
+    with Session(engine) as session:
+        users = session.exec(select(User)).scalars().all()
+        return users
+    
+@app.post("/admin/banuser/{username}", response_model=User)
+async def ban_user(
+    username: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Ban a user from the system. Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to ban users"
+        )
+    
+    with Session(engine) as session:
+        db_user = session.get(User, username)
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Ban the user
+        db_user.disabled = True
+        session.add(db_user)
+        session.commit()
+        session.refresh(db_user)
+        
+        return db_user
+    
+@app.post("/admin/verifyuser/{username}", response_model=User)
+async def verify_user(
+    username: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Verify a user in the system. Only admin users can access this endpoint.
+    """
+    if not getattr(current_user, "isAdmin", False):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to verify users"
+        )
+    
+    with Session(engine) as session:
+        db_user = session.get(User, username)
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify the user - fixed spelling of "Organizer"
+        db_user.isVerifiedOrganizer = True
+        session.add(db_user)
+        session.commit()
+        session.refresh(db_user)
+        
+        return db_user
