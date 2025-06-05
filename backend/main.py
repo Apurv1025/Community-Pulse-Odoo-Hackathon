@@ -892,21 +892,24 @@ async def create_event_tier(
            raise HTTPException(status_code=404, detail="Event not found")
       
        # Check if the current user is the organizer
-       if(db_event.type == "paid"):
+       if(db_event.type == "Paid"):
             if db_event.organiser != current_user.username:
                 raise HTTPException(
                     status_code=403,
                     detail="Only the event organizer can create tiers"
                 )
 
-            tiers=session.get(EventTiers, event_id)
+            tiers = session.exec(
+           select(EventTiers).where(EventTiers.event_id == event_id)
+       ).scalars().all()
+            print(tiers)
             tier_qty=0
             for i in tiers:
                 tier_qty+=i.quantity
             if tier_qty + tier.quantity > db_event.max_capacity:
                     raise HTTPException(
                         status_code=400,
-                        detail="Total quantity exceeds event's maximum capacity, You can add"+(db_event.max_capacity - tier_qty) + " more tickets."
+                        detail="Total quantity exceeds event's maximum capacity, You can add "+str(db_event.max_capacity - tier_qty) + " more tickets."
                     )
             
                     
@@ -1121,32 +1124,37 @@ async def get_issue(issue_id: int):
            raise HTTPException(status_code=404, detail="Issue not found")
        return issue
   
+class IssueUpdateModel(BaseModel):
+    category: Optional[str] = None
+    description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    personal: Optional[str] = None
+
 @app.put("/issues/edit/{issue_id}", response_model=Issue)
 async def update_issue(
-   issue_id: int,
-   issue_update: IssueCreate,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    issue_id: int,
+    issue_update: IssueUpdateModel,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Update a community issue. Only the creator can update their issue.
-   """
-   with Session(engine) as session:
-       db_issue = session.get(Issue, issue_id)
-       if not db_issue:
-           raise HTTPException(status_code=404, detail="Issue not found")
-      
-       # Update fields
-       db_issue.category = issue_update.category
-       db_issue.description = issue_update.description
-       db_issue.latitude = issue_update.latitude
-       db_issue.longitude = issue_update.longitude
-       db_issue.personal = issue_update.personal
-      
-       session.add(db_issue)
-       session.commit()
-       session.refresh(db_issue)
-      
-       return db_issue
+    """
+    Update a community issue. Only the creator can update their issue.
+    Only provided fields will be updated.
+    """
+    with Session(engine) as session:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        
+        update_data = issue_update.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_issue, key, value)
+
+        session.add(db_issue)
+        session.commit()
+        session.refresh(db_issue)
+
+        return db_issue
   
 @app.delete("/issues/delete/{issue_id}", response_model=dict)
 async def delete_issue(
@@ -1438,7 +1446,7 @@ class SortOption(str, Enum):
     RECENT = "recent"
     UPVOTED = "upvoted"
 
-@app.get("/search", response_model=list[EventResponse])
+@app.get("/events/search", response_model=list[EventResponse])
 async def search_events_by_filter(
     term: Optional[str] = None,
     category: Optional[str] = None,
@@ -1525,8 +1533,163 @@ async def search_events_by_filter(
         
         # Convert to response model
         return [EventResponse.from_orm(event) for event in events]
+    
+class IssueSortOption(str, Enum):
+    RECENT = "recent"
+    UPVOTED = "upvoted"
+
+@app.get("/issues/search", response_model=list[Issue])
+async def search_issues_by_filter(
+    term: Optional[str] = None,
+    category: Optional[str] = None,
+    sort_by: Optional[IssueSortOption] = IssueSortOption.RECENT,
+):
+    """
+    Advanced search for community issues with multiple filters and sorting options.
+    
+    Parameters:
+    - term: Search term for issue description (case-insensitive, partial match)
+    - category: Filter by issue category
+    - sort_by: Sort results by 'recent' (default) or 'upvoted'
+    """
+    with Session(engine) as session:
+        # Start building the query
+        query = select(Issue).where(
+            Issue.hidden == False
+        )
+        
+        # Apply search term filter if provided
+        if term:
+            query = query.where(
+                or_(
+                    func.lower(Issue.description).contains(term.lower()),
+                    func.lower(Issue.personal).contains(term.lower())
+                )
+            )
+        
+        # Apply category filter if provided
+        if category:
+            query = query.where(Issue.category == category)
+        
+        # Apply sorting
+        if sort_by == IssueSortOption.UPVOTED:
+            # Count upvotes for each issue using a subquery
+            upvote_counts = (
+                select(
+                    IssueUpvotes.issue_id,
+                    func.count(IssueUpvotes.username).label("upvote_count")
+                )
+                .group_by(IssueUpvotes.issue_id)
+                .subquery()
+            )
+            
+            # Join with the upvote counts and order by count descending
+            query = (
+                select(Issue)
+                .outerjoin(
+                    upvote_counts,
+                    Issue.id == upvote_counts.c.issue_id
+                )
+                .where(
+                    Issue.hidden == False
+                )
+                # Apply all the same filters
+                .order_by(
+                    func.coalesce(upvote_counts.c.upvote_count, 0).desc()
+                )
+            )
+            
+            # Re-apply all the same filters
+            if term:
+                query = query.where(
+                    or_(
+                        func.lower(Issue.description).contains(term.lower()),
+                        func.lower(Issue.personal).contains(term.lower())
+                    )
+                )
+            if category:
+                query = query.where(Issue.category == category)
+        else:
+            # Sort by most recent issues (assuming issues have a creation_date field)
+            # If not, you can adjust this to use the ID (higher ID = more recent)
+            if hasattr(Issue, 'created_at'):
+                query = query.order_by(Issue.created_at.desc())
+            else:
+                query = query.order_by(Issue.id.desc())  # Default to ID sorting
+        
+        # Execute query and get results
+        issues = session.exec(query).scalars().all()
+        
+        return issues
+    
+import math
+from pydantic import BaseModel
+from typing import Optional
+
+@app.get("/events/nearby", response_model=list[EventResponse])
+async def get_nearby_events(
+    latitude: float,
+    longitude: float,
+    radius: float = 5000  # Default radius in meters (5 km)
+):
+    """
+    Get events within the specified radius of the given coordinates.
+    """
+    with Session(engine) as session:
+        # Convert radius from meters to degrees
+        lat_offset = radius / 111000  # 111,000 meters per degree latitude
+        lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+
+        lat_min = latitude - lat_offset
+        lat_max = latitude + lat_offset
+        lon_min = longitude - lon_offset
+        lon_max = longitude + lon_offset
+
+        events = session.exec(
+            select(Event).where(
+                Event.isAccepted == True,
+                Event.isFlagged == False,
+                Event.latitude >= lat_min,
+                Event.latitude <= lat_max,
+                Event.longitude >= lon_min,
+                Event.longitude <= lon_max
+            )
+        ).scalars().all()
+
+        # Convert to response model
+        return [EventResponse.from_orm(event) for event in events]
 
 
+@app.get("/issues/nearby", response_model=list[Issue])
+async def get_nearby_issues(
+    latitude: float,
+    longitude: float,
+    radius: float = 5000  # Default radius in meters (5 km)
+):
+    """
+    Get issues within the specified radius of the given coordinates.
+    """
+    with Session(engine) as session:
+        # Convert radius from meters to degrees
+        lat_offset = radius / 111000  # 111,000 meters per degree latitude
+        lon_offset = radius / (111000 * math.cos(math.radians(abs(latitude))))  # Adjust for latitude
+
+        lat_min = latitude - lat_offset
+        lat_max = latitude + lat_offset
+        lon_min = longitude - lon_offset
+        lon_max = longitude + lon_offset
+
+        issues = session.exec(
+            select(Issue).where(
+                Issue.hidden == False,
+                Issue.latitude >= lat_min,
+                Issue.latitude <= lat_max,
+                Issue.longitude >= lon_min,
+                Issue.longitude <= lon_max
+            )
+        ).scalars().all()
+
+        return issues
 
 
 
