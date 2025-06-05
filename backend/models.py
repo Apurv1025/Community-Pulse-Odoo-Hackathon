@@ -122,7 +122,7 @@ class Issue(SQLModel, table=True):
     longitude: float | None = Field(default=None, nullable=True)
     status: str = Field(default="open", nullable=False)
     hidden: bool = Field(default=False, nullable=False)
-    personal: str = Field(nullable=False)
+    personal: str = Field(nullable=True)
 
 class IssueSpam(SQLModel, table=True):
     issue_id: int = Field(foreign_key="issue.id",primary_key=True, nullable=False)

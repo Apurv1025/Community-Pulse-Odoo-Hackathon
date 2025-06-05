@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import schedule
 from datetime import datetime
+# from backend.event_tasks import schedule_event_reminder, send_event_update_notification
 
 load_dotenv()
 
@@ -29,7 +30,7 @@ def send_event_notifications(recipient: str, event_name: str, event_details: dic
 
         # Create message container
         msg = MIMEMultipart()
-        msg['From'] = SMTP_USERNAME
+        msg['From'] = "teamcommunitypulse319@gmail.com"
         msg['To'] = recipient
         msg['Subject'] = f"Tomorrow's Event: {event_name}"
         
@@ -82,59 +83,4 @@ Authentication failed! Please check:
         print(f"Failed to send email: {str(e)}")
         return False
     
-def schedule_for_specific_date(
-    target_date,
-    target_time,
-    recipient: str,
-    event_name: str,
-    event_details: dict
-):
-    """
-    Schedule an email notification for a specific date and time.
-
-    Args:
-        target_date: The date to send the notification (datetime or str 'YYYY-MM-DD').
-        target_time: The time to send the notification (str 'HH:MM').
-        recipients: List of recipient email addresses.
-        event_name: Name of the event.
-        event_details: Dictionary with event details.
-    """
-    # Convert target_date to datetime if it's a string
-    if isinstance(target_date, str):
-        target_date = datetime.strptime(
-            target_date,
-            '%Y-%m-%d'
-        )
-
-    # Get the day name (monday, tuesday, etc.)
-    day_name = target_date.strftime('%A').lower()
-
-    # Create a one-time job wrapper
-    def job_once():
-        # Check if today is the target date
-        if datetime.now().date() == target_date.date():
-            send_event_notifications(
-                recipient,
-                event_name,
-                event_details
-                )
-            print(
-                f"Job executed for "
-                f"{target_date.strftime('%Y-%m-%d')} "
-                f"at {target_time}"
-            )
-            return schedule.CancelJob
-
-    # Schedule the job for that specific day and time
-    getattr(
-        schedule.every(),
-        day_name
-    ).at(target_time).do(job_once)
-
-    # Run the scheduler loop to execute pending jobs
-    while True:
-        schedule.run_pending()
-        # Sleep for a short time to prevent high CPU usage
-        import time
-        time.sleep(30)
 

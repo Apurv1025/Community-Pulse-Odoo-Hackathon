@@ -11,7 +11,6 @@ from typing import Optional
 from backend.models import *
 from backend.utils.auth import *
 from backend.utils.db import *
-from backend.email_reminder import send_event_notifications, schedule_for_specific_date
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
@@ -22,6 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, status, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.email_tasks import schedule_event_reminder
 
 from sqlalchemy import select, or_, and_, func
 
@@ -43,26 +43,16 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# schedule_for_specific_date(
-#         target_date='2025-06-05',
-#         target_time="19:27",
-#         recipient='rashinkarapurv@gmail.com',
-#         event_name="this event",
-#         event_details={
-#             "start_time": "10:00 AM",
-#             "address": "123 Main St",
-#             "city": "Springfield",
-#             "state": "IL"
-#         })
+event_details = {
+           "start_time": "6:40",
+           "address": "address",
+           "city": "city",
+           "state": "state"
+       }
+      
+       # Schedule the task
+schedule_event_reminder.delay('rashinkarapurv@gmail.com',"hello",event_details,'2025-06-06')
 
-# send_event_notifications(
-#     recipient='rashinkarapurv@gmail.com',
-#     event_name="Test Event",
-#     event_details={
-#         "start_time": "10:00 AM",
-#         "address": "123 Main St",
-#         "city": "Springfield",
-#          "state": "IL"})
 
 
 @app.on_event("startup")
@@ -385,21 +375,20 @@ async def reject_event(
 
 
 @app.get("/admin/requestevents", response_model=list[EventResponse])
-async def get_all_request_events():
-    """
-    Retrieve all events from the database that are not accepted or rejected.
-    """
-    with Session(engine) as session:
-        events = (
-            session.exec(
-                select(Event).where(
-                    Event.isAccepted == False, Event.isRejected == False
-                )
-            )
-            .scalars()
-            .all()
-        )
-        return [EventResponse.from_orm(event) for event in events]
+async def get_all_request_events(
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Retrieve all events from the database that are not accepted or rejected.
+   Only admin users can access this endpoint.
+   """
+   if not current_user.isAdmin:
+       raise HTTPException(status_code=403, detail="Not authorized to view requested events")
+   with Session(engine) as session:
+       events = session.exec(
+           select(Event).where(Event.isAccepted == False, Event.isRejected == False)
+       ).scalars().all()
+       return [EventResponse.from_orm(event) for event in events]
 
 
 @app.get("/admin/event/flag/{event_id}", response_model=Event)
@@ -465,28 +454,25 @@ async def search_events(searchterm: str):
 
 @app.get("/admin/usersearch/{searchterm}", response_model=list[UserPublic])
 async def admin_search_users(
-    searchterm: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+   searchterm: str,
+   current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    """
-    Admin search for users by username or email (case-insensitive, partial match).
-    """
-    if not current_user.isAdmin:
-        raise HTTPException(status_code=403, detail="Not authorized to search users")
-    with Session(engine) as session:
-        users = (
-            session.exec(
-                select(User).where(
-                    or_(
-                        func.lower(User.username).contains(searchterm.lower()),
-                        func.lower(User.email).contains(searchterm.lower()),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        return [UserPublic.model_validate(user) for user in users]
+   """
+   Admin search for users by username or email (case-insensitive, partial match).
+   Only admin users can access this endpoint.
+   """
+   if not getattr(current_user, "isAdmin", False):
+       raise HTTPException(status_code=403, detail="Not authorized to search users")
+   with Session(engine) as session:
+       users = session.exec(
+           select(User).where(
+               or_(
+                   func.lower(User.username).contains(searchterm.lower()),
+                   func.lower(User.email).contains(searchterm.lower())
+               )
+           )
+       ).scalars().all()
+       return [UserPublic.model_validate(user) for user in users]
 
 
 class EventRegister(BaseModel):
@@ -516,21 +502,27 @@ async def register_user_to_event(
         session.add(event_registration)
         session.commit()
 
-        # Schedule notification for 1 day before the event
-    # notification_date = db_event.start_date - timedelta(days=1)
-    # schedule_for_specific_date(
-    #     target_date=notification_date,
-    #     target_time="08:00",
-    #     recipient=current_user.email,
-    #     event_name=db_event.event_name,
-    #     event_details={
-    #         "start_time": db_event.start_date.strftime("%I:%M %p"),
-    #         "address": db_event.address,
-    #         "city": db_event.city,
-    #         "state": db_event.state
-    #     })
+        event_details = {
+           "start_time": db_event.start_date.strftime("%I:%M %p"),
+           "address": db_event.address,
+           "city": db_event.city,
+           "state": db_event.state
+       }
+      
+       # Schedule the task
+        schedule_event_reminder.delay(
+           current_user.email,
+           db_event.event_name,
+           event_details,
+           db_event.start_date.strftime('%Y-%m-%d')
+       )
 
-    return {"detail": "User registered to event successfully"}
+
+        new_follow = EventFollowing(event_id=event_id, username=current_user.username)
+        session.add(new_follow)
+        session.commit()
+        
+        return {"detail": "Event followed successfully"}
 
 
 @app.get("/event/{event_id}/registered", response_model=dict)
@@ -678,7 +670,7 @@ async def follow_event(
         if existing_follow:
             return {"detail": "Already following"}
 
-        new_follow = Following(event_id=event_id, username=current_user.username)
+        new_follow = EventFollowing(event_id=event_id, username=current_user.username)
         session.add(new_follow)
         session.commit()
 
@@ -782,3 +774,407 @@ async def verify_payment(
 
     except razorpay.errors.SignatureVerificationError:  # type: ignore
         raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+@app.get("/user/followed-events", response_model=list[EventResponse])
+async def get_user_followed_events(
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Retrieve all events that the current user is following.
+   """
+   with Session(engine) as session:
+       # First, find all event IDs that the user is following
+       followed_event_records = session.exec(
+           select(EventFollowing).where(
+               EventFollowing.username == current_user.username
+           )
+       ).scalars().all()
+      
+       followed_event_ids = [record.event_id for record in followed_event_records]
+      
+       if not followed_event_ids:
+           return []
+      
+       # Then, retrieve the actual event data for those IDs
+       events = session.exec(
+           select(Event).where(
+               Event.id.in_(followed_event_ids),
+               Event.isAccepted == True,
+               Event.isFlagged == False
+           )
+       ).scalars().all()
+      
+       return [EventResponse.from_orm(event) for event in events]
+  
+# First, add this Pydantic model for tier creation requests
+class TierCreate(BaseModel):
+   tier_name: str
+   tier_price: float
+   quantity: int
+
+
+@app.post("/event/{event_id}/tiers", response_model=EventTiers)
+async def create_event_tier(
+   event_id: int,
+   tier: TierCreate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Create a new pricing tier for an event.
+   Only the event organizer can create tiers.
+   """
+   with Session(engine) as session:
+       # Check if the event exists
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           raise HTTPException(status_code=404, detail="Event not found")
+      
+       # Check if the current user is the organizer
+       if db_event.organiser != current_user.username:
+           raise HTTPException(
+               status_code=403,
+               detail="Only the event organizer can create tiers"
+           )
+      
+       # Create the new tier
+       new_tier = EventTiers(
+           event_id=event_id,
+           tier_name=tier.tier_name,
+           tier_price=tier.tier_price,
+           quantity=tier.quantity
+       )
+      
+       # Add and commit to database
+       session.add(new_tier)
+       session.commit()
+       session.refresh(new_tier)
+      
+       return new_tier
+  
+@app.get("/event/{event_id}/tiers", response_model=list[EventTiers])
+async def get_event_tiers(event_id: int):
+   """
+   Retrieve all pricing tiers for a specific event.
+   """
+   with Session(engine) as session:
+       # Fetch the event tiers
+       tiers = session.exec(
+           select(EventTiers).where(EventTiers.event_id == event_id)
+       ).scalars().all()
+      
+       return tiers
+  
+
+
+class FeedbackCreate(BaseModel):
+   feedback: str
+
+
+@app.post("/event/{event_id}/feedback", response_model=dict)
+async def submit_event_feedback(
+   event_id: int,
+   feedback_data: FeedbackCreate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Submit feedback for an event.
+   Users can only provide feedback once per event.
+   """
+   with Session(engine) as session:
+       # Check if the event exists
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           raise HTTPException(status_code=404, detail="Event not found")
+      
+       # Check if the user has already provided feedback for this event
+       existing_feedback = session.exec(
+           select(QuickFeedback).where(
+               QuickFeedback.event_id == event_id,
+               QuickFeedback.username == current_user.username
+           )
+       ).first()
+      
+       if existing_feedback:
+           # Update existing feedback instead of error
+           existing_feedback.feedback = feedback_data.feedback
+           session.add(existing_feedback)
+           session.commit()
+           return {"detail": "Feedback updated successfully"}
+      
+       # Create new feedback entry
+       new_feedback = QuickFeedback(
+           event_id=event_id,
+           username=current_user.username,
+           feedback=feedback_data.feedback
+       )
+      
+       session.add(new_feedback)
+       session.commit()
+      
+       return {"detail": "Feedback submitted successfully"}
+  
+@app.get("/event/{event_id}/feedback", response_model=dict)
+async def get_event_feedback_summary(event_id: int):
+    """
+    Retrieve feedback for a specific event, grouped and counted by feedback content.
+    Returns a dictionary with event_id and a nested dictionary of feedback counts.
+    """
+    with Session(engine) as session:
+        # Fetch the feedback for the event
+        feedbacks = session.exec(
+            select(QuickFeedback).where(QuickFeedback.event_id == event_id)
+        ).scalars().all()
+        
+        # Count occurrences of each feedback
+        feedback_counts = {}
+        for fb in feedbacks:
+            if fb.feedback in feedback_counts:
+                feedback_counts[fb.feedback] += 1
+            else:
+                feedback_counts[fb.feedback] = 1
+        
+        # Create the result dictionary
+        result = {
+            "event_id": event_id,
+            "feedback": feedback_counts
+        }
+        
+        return result
+  
+@app.get("/event/{event_id}/upvotes", response_model=int)
+async def get_event_upvotes(event_id: int):
+   """
+   Get the total number of upvotes for a specific event.
+   """
+   with Session(engine) as session:
+       # Count the number of upvotes for the event
+       upvote_count = session.exec(
+           select(func.count(EventUpvotes.event_id)).where(EventUpvotes.event_id == event_id)
+       ).scalar_one_or_none() or 0
+      
+       return upvote_count
+  
+@app.get("/event/{event_id}/followers", response_model=int)
+async def get_event_followers(event_id: int):
+   """
+   Get the total number of followers for a specific event.
+   """
+   with Session(engine) as session:
+       # Count the number of followers for the event
+       follower_count = session.exec(
+           select(func.count(EventFollowing.event_id)).where(EventFollowing.event_id == event_id)
+       ).scalar_one_or_none() or 0
+      
+       return follower_count
+  
+# First add this Pydantic model for the request body
+class IssueCreate(BaseModel):
+   category: str
+   description: str
+   latitude: Optional[float] = None
+   longitude: Optional[float] = None
+   personal: str  # For contact information or personal notes
+
+
+@app.post("/issues/create", response_model=Issue)
+async def create_issue(
+   issue_data: IssueCreate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Create a new community issue report.
+   Requires authentication.
+   """
+   with Session(engine) as session:
+       # Create new issue
+       new_issue = Issue(
+           category=issue_data.category,
+           description=issue_data.description,
+           latitude=issue_data.latitude,
+           longitude=issue_data.longitude,
+           personal=issue_data.personal
+           # status and hidden will use their default values
+       )
+      
+       session.add(new_issue)
+       session.commit()
+       session.refresh(new_issue)
+      
+       return new_issue
+  
+@app.get("/issues/", response_model=list[Issue])
+async def get_all_issues():
+   """
+   Retrieve all community issues that are not hidden.
+   """
+   with Session(engine) as session:
+       issues = session.exec(
+           select(Issue).where(Issue.hidden == False)
+       ).scalars().all()
+       return issues
+  
+@app.get("/admin/issues/hidden", response_model=list[Issue])
+async def get_all_hidden_issues(
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Retrieve all community issues that are hidden.
+   Only admin users can access this endpoint.
+   """
+   if not getattr(current_user, "isAdmin", False):
+       raise HTTPException(status_code=403, detail="Not authorized to view hidden issues")
+   with Session(engine) as session:
+       issues = session.exec(
+           select(Issue).where(Issue.hidden == True)
+       ).scalars().all()
+       return issues
+
+
+@app.get("/issues/{issue_id}", response_model=Issue)
+async def get_issue(issue_id: int):
+   """
+   Retrieve a specific community issue by its ID.
+   """
+   with Session(engine) as session:
+       issue = session.get(Issue, issue_id)
+       if not issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+       return issue
+  
+@app.put("/issues/edit/{issue_id}", response_model=Issue)
+async def update_issue(
+   issue_id: int,
+   issue_update: IssueCreate,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Update a community issue. Only the creator can update their issue.
+   """
+   with Session(engine) as session:
+       db_issue = session.get(Issue, issue_id)
+       if not db_issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+      
+       # Update fields
+       db_issue.category = issue_update.category
+       db_issue.description = issue_update.description
+       db_issue.latitude = issue_update.latitude
+       db_issue.longitude = issue_update.longitude
+       db_issue.personal = issue_update.personal
+      
+       session.add(db_issue)
+       session.commit()
+       session.refresh(db_issue)
+      
+       return db_issue
+  
+@app.delete("/issues/delete/{issue_id}", response_model=dict)
+async def delete_issue(
+   issue_id: int,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Delete a community issue. Only the creator can delete their issue.
+   """
+   with Session(engine) as session:
+       db_issue = session.get(Issue, issue_id)
+       if not db_issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+       if db_issue.creator != current_user.username:
+           raise HTTPException(status_code=403, detail="Not authorized to delete this issue")
+      
+       session.delete(db_issue)
+       session.commit()
+      
+       return {"detail": "Issue deleted successfully"}
+  
+@app.get("/issues/{issue_id}/upvotes", response_model=int)
+async def get_issue_upvotes(issue_id: int):
+   """
+   Get the total number of upvotes for a specific community issue.
+   """
+   with Session(engine) as session:
+       # Count the number of upvotes for the issue
+       upvote_count = session.exec(
+           select(func.count(IssueUpvotes.issue_id)).where(IssueUpvotes.issue_id == issue_id)
+       ).scalar_one_or_none() or 0
+      
+       return upvote_count
+  
+@app.post("/issues/{issue_id}/upvote", response_model=dict)
+async def upvote_issue(
+   issue_id: int,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Upvote a community issue. If the user has already upvoted, it will not add a duplicate.
+   """
+   with Session(engine) as session:
+       db_issue = session.get(Issue, issue_id)
+       if not db_issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+      
+       # Check if the user has already upvoted
+       existing_upvote = session.exec(
+           select(IssueUpvotes).where(
+               IssueUpvotes.issue_id == issue_id,
+               IssueUpvotes.username == current_user.username
+           )
+       ).first()
+      
+       if existing_upvote:
+           return {"detail": "Already upvoted"}
+      
+       new_upvote = IssueUpvotes(issue_id=issue_id, username=current_user.username)
+       session.add(new_upvote)
+       session.commit()
+      
+       return {"detail": "Issue upvoted successfully"}
+  
+@app.post("/issues/{issue_id}/spam", response_model=dict)
+async def mark_issue_as_spam(
+   issue_id: int,
+   current_user: Annotated[User, Depends(get_current_active_user)],
+):
+   """
+   Mark a community issue as spam. If an issue receives more than 5 spam reports, it becomes hidden.
+   """
+   with Session(engine) as session:
+       db_issue = session.get(Issue, issue_id)
+       if not db_issue:
+           raise HTTPException(status_code=404, detail="Issue not found")
+       # Check if already marked as spam by this user
+       existing_spam = session.exec(
+           select(IssueSpam).where(
+               IssueSpam.issue_id == issue_id,
+               IssueSpam.username == current_user.username
+           )
+       ).first()
+       if existing_spam:
+           return {"detail": "Already marked as spam"}
+      
+       spam_entry = IssueSpam(issue_id=issue_id, username=current_user.username)
+       session.add(spam_entry)
+       session.commit()
+
+
+       # Count total spam reports for this issue
+       spam_count = session.exec(
+           select(func.count(IssueSpam.issue_id)).where(IssueSpam.issue_id == issue_id)
+       ).scalar_one_or_none() or 0
+
+
+       # If more than 5 spam reports, hide the issue
+       if spam_count > 5 and not db_issue.hidden:
+           db_issue.hidden = True
+           session.add(db_issue)
+           session.commit()
+           return {"detail": "Issue marked as spam and hidden due to multiple reports"}
+
+
+       return {"detail": "Issue marked as spam"}
+
+
+
+
+
