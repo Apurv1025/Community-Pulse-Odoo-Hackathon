@@ -184,7 +184,7 @@
             <UIcon name="i-lucide-alert-triangle" class="w-12 h-12 text-amber-500 mx-auto mb-4" />
             <h2 class="text-xl font-semibold mb-2">Issue Not Found</h2>
             <p class="mb-4 text-gray-500">The issue you're looking for doesn't exist or has been removed.</p>
-            <UButton to="/issues" icon="i-lucide-list">Back to Issues</UButton>
+            <UButton to="/" icon="i-lucide-list">Back to Issues</UButton>
         </UCard>
 
         <!-- Delete Confirmation Modal -->
@@ -537,7 +537,7 @@ const deleteIssue = async () => {
         });
 
         // Redirect to issues list
-        navigateTo('/issues');
+        navigateTo('/');
     } catch (error) {
         console.error('Error deleting issue:', error);
         toast.add({
