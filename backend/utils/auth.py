@@ -31,6 +31,7 @@ def get_password_hash(password):
 def get_user(session: Session, username: str):
     query = select(User).where(User.username == username)
     user = session.exec(query).first()
+    session.close()
     # user = session.get(User, username)
     if user:
         return user

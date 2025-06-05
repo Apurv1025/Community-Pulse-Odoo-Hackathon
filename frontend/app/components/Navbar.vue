@@ -5,7 +5,7 @@
                 <!-- Left section with logo/brand -->
                 <div class="flex items-center mb-4 md:mb-0">
                     <NuxtLink to="/" class="text-primary dark:text-white text-xl font-bold flex items-center">
-                        <UIcon name="i-lucide-pulse" class="w-6 h-6 mr-2" />
+                        <UIcon name="i-lucide-activity" class="w-6 h-6 mr-2" />
                         Community Pulse
                     </NuxtLink>
                 </div>

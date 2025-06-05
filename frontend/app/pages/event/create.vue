@@ -25,8 +25,148 @@ const state = reactive({
     isLoading: false,
     locationLoading: false,
     showFileUpload: false,
+    showTierSetup: false, // New field to control tier setup visibility
     createdEventId: null
 });
+
+// New reactive object for pricing tiers
+const tiers = reactive({
+    items: [{ tier_name: 'General Admission', price: 0, quantity: 0 }], // Default tier
+    error: '',
+    isLoading: false
+});
+
+// Track remaining capacity for tiers
+const remainingCapacity = computed(() => {
+    const maxCapacity = parseInt(state.max_capacity) || 0;
+    const usedCapacity = tiers.items.reduce((total, tier) => total + (parseInt(tier.quantity) || 0), 0);
+    return maxCapacity - usedCapacity;
+});
+
+// Add a new tier
+const addTier = () => {
+    tiers.items.push({ tier_name: '', price: 0, quantity: 0 });
+};
+
+// Remove a tier
+const removeTier = (index) => {
+    tiers.items.splice(index, 1);
+    // Always keep at least one tier
+    if (tiers.items.length === 0) {
+        tiers.items.push({ tier_name: 'General Admission', price: 0, quantity: 0 });
+    }
+};
+
+// Function to save tiers to the backend
+const saveTiers = async () => {
+    tiers.isLoading = true;
+    tiers.error = '';
+
+    // Validate tiers
+    if (remainingCapacity.value !== 0) {
+        tiers.error = remainingCapacity.value < 0
+            ? 'Total tier quantity exceeds the maximum event capacity.'
+            : 'Total tier quantity must exactly match the maximum event capacity.';
+        tiers.isLoading = false;
+        toast.add({
+            title: 'Validation Error',
+            description: tiers.error,
+            color: 'error'
+        });
+        return;
+    }
+
+    // Validate that all tiers have names and positive quantities
+    for (const tier of tiers.items) {
+        if (!tier.tier_name.trim()) {
+            tiers.error = 'All tiers must have names.';
+            tiers.isLoading = false;
+            toast.add({
+                title: 'Validation Error',
+                description: tiers.error,
+                color: 'error'
+            });
+            return;
+        }
+
+        if (parseInt(tier.quantity) <= 0) {
+            tiers.error = 'All tiers must have a positive quantity.';
+            tiers.isLoading = false;
+            toast.add({
+                title: 'Validation Error',
+                description: tiers.error,
+                color: 'error'
+            });
+            return;
+        }
+
+        if (state.event_type === 'Paid' && parseFloat(tier.price) <= 0) {
+            tiers.error = 'All tiers must have a positive price for paid events.';
+            tiers.isLoading = false;
+            toast.add({
+                title: 'Validation Error',
+                description: tiers.error,
+                color: 'error'
+            });
+            return;
+        }
+    }
+
+    try {
+        // Send each tier individually to the backend
+        const results = [];
+        for (const tier of tiers.items) {
+            // Create the tier data in the required schema format
+            const tierData = {
+                tier_name: tier.tier_name,
+                tier_price: parseFloat(tier.price) || 0,
+                quantity: parseInt(tier.quantity) || 0
+            };
+
+            console.log('Posting tier:', tierData);
+
+            // Make API call for each tier
+            const response = await fetch(`${config.public.backendUrl}/event/${state.createdEventId}/tiers`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${store.session}`
+                },
+                body: JSON.stringify(tierData)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `Failed to save tier: ${tier.tier_name}`);
+            }
+
+            const result = await response.json();
+            results.push(result);
+        }
+
+        console.log('All tiers saved:', results);
+
+        toast.add({
+            title: 'Success',
+            description: 'Pricing tiers saved successfully.',
+            color: 'success'
+        });
+
+        // Move to image upload step
+        state.showTierSetup = false;
+        state.showFileUpload = true;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save pricing tiers.';
+        tiers.error = errorMessage;
+        toast.add({
+            title: 'Error',
+            description: tiers.error,
+            color: 'error'
+        });
+    } finally {
+        tiers.isLoading = false;
+    }
+};
 
 // Default categories list
 const categories = ref([
@@ -168,19 +308,17 @@ const createEvent = async () => {
         const createdEvent = await response.json();
         console.log('Event created:', createdEvent);
 
-        // Save the created event ID and show the file upload component
+        // Save the created event ID and show the tier setup component for paid events
         state.createdEventId = createdEvent.id;
-        state.showFileUpload = true;
+        state.showTierSetup = state.event_type === 'Paid';
+        state.showFileUpload = state.event_type === 'Free';
 
         toast.add({
             title: 'Success',
-            description: 'Event created successfully. You can now upload images for this event.',
+            description: 'Event created successfully. Proceed to the next step.',
             color: 'success'
         });
-
-        // Don't redirect to home page yet, let the user upload images first
-        // router.push('/');
-    } catch (error: Error | unknown) {
+    } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create event. Please try again.';
         state.error = errorMessage;
         toast.add({
@@ -201,7 +339,7 @@ const finishAndGoHome = () => {
 <template>
     <UContainer class="py-8">
         <!-- Event Creation Form -->
-        <UCard v-if="!state.showFileUpload" class="w-full max-w-3xl mx-auto">
+        <UCard v-if="!state.showFileUpload && !state.showTierSetup" class="w-full max-w-3xl mx-auto">
             <template #header>
                 <div class="flex flex-col gap-1">
                     <h2 class="text-xl font-semibold">Create New Event</h2>
@@ -219,7 +357,7 @@ const finishAndGoHome = () => {
                     </UFormField>
 
                     <UFormField label="Event Description" name="event_description" required>
-                        <UTextarea v-model="state.event_description" placeholder="Describe your event..." rows="4"
+                        <UTextarea v-model="state.event_description" placeholder="Describe your event..." :rows="4"
                             class="w-full" required />
                     </UFormField>
 
@@ -234,8 +372,10 @@ const finishAndGoHome = () => {
                     </UFormField>
 
                     <UFormField label="Max Capacity" name="max_capacity" required>
-                        <UInput v-model="state.max_capacity" type="number" min="1"
-                            placeholder="Maximum number of participants" class="w-full" required />
+                        <UInput type="text" inputmode="numeric" placeholder="Maximum number of participants"
+                            class="w-full" required :value="state.max_capacity"
+                            @keypress="(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }"
+                            @input="(e) => { state.max_capacity = e.target.value.replace(/[^0-9]/g, '') }" />
                     </UFormField>
                 </div>
 
@@ -283,13 +423,17 @@ const finishAndGoHome = () => {
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <UFormField label="Latitude" name="latitude" required>
-                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full"
-                                required />
+                            <UInput type="text" inputmode="decimal" placeholder="Latitude" class="w-full" required
+                                :value="state.latitude"
+                                @keypress="(e) => { if (!/[0-9.-]/.test(e.key) || (e.key === '.' && state.latitude.includes('.')) || (e.key === '-' && state.latitude !== '')) e.preventDefault(); }"
+                                @input="(e) => { state.latitude = e.target.value.replace(/[^0-9.-]/g, ''); }" />
                         </UFormField>
 
                         <UFormField label="Longitude" name="longitude" required>
-                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full"
-                                required />
+                            <UInput type="text" inputmode="decimal" placeholder="Longitude" class="w-full" required
+                                :value="state.longitude"
+                                @keypress="(e) => { if (!/[0-9.-]/.test(e.key) || (e.key === '.' && state.longitude.includes('.')) || (e.key === '-' && state.longitude !== '')) e.preventDefault(); }"
+                                @input="(e) => { state.longitude = e.target.value.replace(/[^0-9.-]/g, ''); }" />
                         </UFormField>
                     </div>
 
@@ -308,8 +452,75 @@ const finishAndGoHome = () => {
             </UForm>
         </UCard>
 
+        <!-- Tier Setup Component -->
+        <UCard v-if="state.showTierSetup" class="w-full max-w-3xl mx-auto">
+            <template #header>
+                <div class="flex flex-col gap-1">
+                    <h2 class="text-xl font-semibold">Setup Pricing Tiers</h2>
+                    <p class="text-sm text-gray-500">Define pricing tiers for your paid event</p>
+                </div>
+            </template>
+
+            <div class="space-y-4">
+                <div v-for="(tier, index) in tiers.items" :key="index" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <UFormField :label="`Tier Name ${index + 1}`" :name="`tier_name_${index}`" required>
+                        <UInput v-model="tier.tier_name" type="text" placeholder="Enter tier name" class="w-full"
+                            required />
+                    </UFormField>
+
+                    <UFormField :label="`Price ${index + 1}`" :name="`tier_price_${index}`" required>
+                        <UInput type="text" inputmode="decimal" placeholder="Enter price" class="w-full" required
+                            :value="tier.price"
+                            @keypress="(e) => { if (!/[0-9.]/.test(e.key) || (e.key === '.' && tier.price.toString().includes('.'))) e.preventDefault(); }"
+                            @input="(e) => { tier.price = e.target.value.replace(/[^0-9.]/g, ''); }" />
+                    </UFormField>
+
+                    <UFormField :label="`Quantity ${index + 1}`" :name="`tier_quantity_${index}`" required>
+                        <UInput type="text" inputmode="numeric" placeholder="Enter quantity" class="w-full" required
+                            :value="tier.quantity" @keypress="(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }"
+                            @input="(e) => { tier.quantity = e.target.value.replace(/[^0-9]/g, '') }" />
+                    </UFormField>
+
+                    <div class="flex justify-end mt-2">
+                        <UButton label="Remove Tier" type="button" variant="outline" color="error" size="sm"
+                            @click="removeTier(index)" />
+                    </div>
+                </div>
+
+                <!-- Remaining capacity display -->
+                <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div class="flex justify-between">
+                        <span class="font-medium">Total capacity:</span>
+                        <span>{{ state.max_capacity }} attendees</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="font-medium">Used in tiers:</span>
+                        <span>{{ parseInt(state.max_capacity) - remainingCapacity }} attendees</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="font-medium">Remaining capacity:</span>
+                        <span :class="{ 'text-red-500': remainingCapacity < 0 }">
+                            {{ remainingCapacity }} attendees
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-4">
+                    <UButton label="Add Tier" type="button" variant="solid" color="secondary" size="md"
+                        @click="addTier" />
+                </div>
+
+                <p v-if="tiers.error" class="text-red-500 text-sm text-center">{{ tiers.error }}</p>
+            </div>
+
+            <div class="flex justify-center mt-6">
+                <UButton label="Save Tiers" type="button" variant="solid" color="primary" size="xl" class="px-8"
+                    :loading="tiers.isLoading" @click="saveTiers" />
+            </div>
+        </UCard>
+
         <!-- File Upload Component (shown after event creation) -->
-        <div v-else>
+        <div v-if="state.showFileUpload">
             <h2 class="text-2xl font-semibold text-center mb-4">Upload Event Images</h2>
             <p class="text-center text-gray-600 mb-6">Upload up to 5 images for your event</p>
 

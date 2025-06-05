@@ -31,10 +31,14 @@
             </div>
 
             <!-- Square Image -->
-            <div v-if="event.img_url" class="w-24 h-24 flex-shrink-0 overflow-hidden"
+            <div v-if="event.image_url" class="w-24 h-24 flex-shrink-0 overflow-hidden"
                 style="min-width: 96px; min-height: 96px; max-width: 96px; max-height: 96px; flex: 0 0 96px; display: block;">
-                <img :src="event.img_url" :alt="event.event_name" class="w-full h-full object-cover rounded-md"
+                <img :src="event.image_url" :alt="event.event_name" class="w-full h-full object-cover rounded-md"
                     style="object-fit: cover; width: 100%; height: 100%;">
+            </div>
+            <div v-else class="w-24 h-24 flex-shrink-0 overflow-hidden bg-gray-100 flex items-center justify-center"
+                style="min-width: 96px; min-height: 96px; max-width: 96px; max-height: 96px; flex: 0 0 96px; display: block;">
+                <UIcon name="i-lucide-image" class="w-10 h-10 text-gray-300" />
             </div>
         </div>
 

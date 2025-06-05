@@ -71,7 +71,9 @@ const fetchEvents = async () => {
             ...event,
             processing: false,
             flagging: false,
-            actionType: null
+            actionType: null,
+            // Add a default image URL for the admin view
+            image_url: `${config.public.backendUrl}/uploads/default-event.jpg`
         }));
     } catch (err) {
         console.error('Error fetching events:', err);

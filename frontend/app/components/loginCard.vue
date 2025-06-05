@@ -44,7 +44,18 @@ const login = async () => {
       color: 'success'
     })
     console.log(store.user)
-    router.push('/')
+
+    // Check if the user is admin and redirect accordingly
+    if (store.user && store.user.isAdmin) {
+      router.push('/admin')
+    } else {
+      router.push('/')
+    }
+
+    // Reload the page to ensure all components update with user state
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   } catch (error: Error | unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Login failed. Please try again.';
     state.loginError = errorMessage;
@@ -69,7 +80,14 @@ const register = async () => {
       description: 'Registration successful! You are now logged in.',
       color: 'success'
     })
+
+    // Newly registered users aren't admins, redirect to home
     router.push('/')
+
+    // Reload the page to ensure all components update with user state
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   } catch (error: Error | unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Registration failed. Please try again.';
     state.registerError = errorMessage;

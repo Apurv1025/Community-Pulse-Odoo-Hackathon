@@ -74,8 +74,9 @@ const getCurrentLocation = () => {
     state.locationLoading = true;
     navigator.geolocation.getCurrentPosition(
         (position) => {
-            state.latitude = position.coords.latitude.toString();
-            state.longitude = position.coords.longitude.toString();
+            // Format to appropriate number of decimal places to avoid extremely long values
+            state.latitude = parseFloat(position.coords.latitude.toFixed(6)).toString();
+            state.longitude = parseFloat(position.coords.longitude.toFixed(6)).toString();
             modifiedFields.latitude = true;
             modifiedFields.longitude = true;
             state.locationLoading = false;
@@ -321,9 +322,12 @@ const updateEvent = async () => {
                     </UFormField>
 
                     <UFormField label="Max Capacity" name="max_capacity">
-                        <UInput v-model="state.max_capacity" type="number" min="1"
-                            placeholder="Maximum number of participants" class="w-full"
-                            @input="handleFieldChange('max_capacity')" />
+                        <UInput type="text" inputmode="numeric" placeholder="Maximum number of participants"
+                            class="w-full" :value="state.max_capacity"
+                            @keypress="(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }" @input="(e) => {
+                                state.max_capacity = e.target.value.replace(/[^0-9]/g, '');
+                                handleFieldChange('max_capacity');
+                            }" />
                     </UFormField>
                 </div>
 
@@ -377,13 +381,23 @@ const updateEvent = async () => {
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <UFormField label="Latitude" name="latitude">
-                            <UInput v-model="state.latitude" type="text" placeholder="Latitude" class="w-full"
-                                @input="handleFieldChange('latitude')" />
+                            <UInput type="text" inputmode="decimal" placeholder="Latitude" class="w-full"
+                                :value="state.latitude"
+                                @keypress="(e) => { if (!/[0-9.-]/.test(e.key) || (e.key === '.' && state.latitude.includes('.')) || (e.key === '-' && state.latitude !== '')) e.preventDefault(); }"
+                                @input="(e) => {
+                                    state.latitude = e.target.value.replace(/[^0-9.-]/g, '');
+                                    handleFieldChange('latitude');
+                                }" />
                         </UFormField>
 
                         <UFormField label="Longitude" name="longitude">
-                            <UInput v-model="state.longitude" type="text" placeholder="Longitude" class="w-full"
-                                @input="handleFieldChange('longitude')" />
+                            <UInput type="text" inputmode="decimal" placeholder="Longitude" class="w-full"
+                                :value="state.longitude"
+                                @keypress="(e) => { if (!/[0-9.-]/.test(e.key) || (e.key === '.' && state.longitude.includes('.')) || (e.key === '-' && state.longitude !== '')) e.preventDefault(); }"
+                                @input="(e) => {
+                                    state.longitude = e.target.value.replace(/[^0-9.-]/g, '');
+                                    handleFieldChange('longitude');
+                                }" />
                         </UFormField>
                     </div>
 

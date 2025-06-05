@@ -7,6 +7,22 @@
 </template>
 
 <script setup>
+import { useAuthStore } from "../../stores/authStore";
+
+const store = useAuthStore();
+const router = useRouter();
+
+// Check if user is already authenticated
+onMounted(() => {
+    if (store.user) {
+        // If user is already logged in, redirect based on admin status
+        if (store.user.isAdmin) {
+            router.push('/admin');
+        } else {
+            router.push('/');
+        }
+    }
+});
 </script>
 
 <style scoped></style>

@@ -63,7 +63,16 @@ const fetchEvents = async () => {
       throw new Error(`Failed to fetch events: ${response.status}`);
     }
 
-    events.value = await response.json();
+    const eventsData = await response.json();
+    // Process events to include image URLs
+    events.value = eventsData.map(event => {
+      // For each event, we need to add the default image URL (will be updated when user views details)
+      return {
+        ...event,
+        img_url: `${config.public.backendUrl}/uploads/default-event.jpg` // Use a default image
+      };
+    });
+    console.log('Processed events:', events.value);
   } catch (err) {
     console.error('Error fetching events:', err);
     error.value = 'Failed to load events. Please try again later.';
