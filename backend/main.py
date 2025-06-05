@@ -1504,53 +1504,59 @@ def send_event_update_emails(
 def notify_users_of_event_update(session, event_id, update_record_id):
    """
    Send email notifications to all users registered for an event when it gets updated.
-   Uses the EventUpdates database record directly for reliable update emails.
    """
-   # Get the event
-   db_event = session.get(Event, event_id)
-   if not db_event:
-       print(f"Event {event_id} not found")
-       return 0
+   try:
+       # Get the event
+       db_event = session.get(Event, event_id)
+       if not db_event:
+           print(f"Event {event_id} not found")
+           return 0
+          
+       # Verify the update record exists
+       update_record = session.get(EventUpdates, update_record_id)
+       if not update_record:
+           print(f"Update record {update_record_id} not found")
+           return 0
       
-   # Verify the update record exists
-   update_record = session.get(EventUpdates, update_record_id)
-   if not update_record:
-       print(f"Update record {update_record_id} not found")
-       return 0
+       # Get all users registered for this event WITH their email addresses
+       registrations = session.exec(
+           select(EventRegistered, User.email)
+           .join(User, EventRegistered.username == User.username)
+           .where(EventRegistered.event_id == event_id)
+       ).all()
       
-   # Get all users registered for this event WITH their email addresses
-   registrations = session.exec(
-       select(EventRegistered, User.email)
-       .join(User, EventRegistered.username == User.username)
-       .where(EventRegistered.event_id == event_id)
-   ).all()
-  
-   if not registrations:
-       print(f"No registered users found for event {event_id}")
-       return 0
-  
-   # Send emails to each registered user using the dedicated update task
-   sent_count = 0
-   for reg_tuple in registrations:
-       registration, email = reg_tuple  # Unpack the tuple
-       if not email:
-           print(f"No email for user {registration.username}")
-           continue
+       if not registrations:
+           print(f"No registered users found for event {event_id}")
+           return 0
       
-       try:
-           from backend.email_tasks import send_event_update_notification
-           # Queue the dedicated update email task
-           send_event_update_notification.delay(
-               recipient_email=email,
-               event_id=event_id,
-               update_id=update_record_id
-           )
-           sent_count += 1
-       except Exception as e:
-           print(f"Failed to queue update email to {email}: {str(e)}")
-  
-   print(f"Queued {sent_count} update notifications for event {event_id}")
-   return sent_count
+       # Send emails to each registered user using the dedicated update task
+       sent_count = 0
+       for reg_tuple in registrations:
+           registration, email = reg_tuple  # Unpack the tuple
+           if not email:
+               print(f"No email for user {registration.username}")
+               continue
+          
+           try:
+               # IMPORTANT: Import at module level instead
+               from backend.email_tasks import send_event_update_notification
+               
+               # Queue the dedicated update email task
+               print(f"Queueing email to {email} for event {event_id}")
+               send_event_update_notification.delay(
+                   recipient_email=email,
+                   event_id=event_id,
+                   update_id=update_record_id
+               )
+               sent_count += 1
+           except Exception as e:
+               print(f"Failed to queue update email to {email}: {str(e)}")
+      
+       print(f"Queued {sent_count} update notifications for event {event_id}")
+       return sent_count
+   except Exception as e:
+       print(f"Error in notify_users_of_event_update: {str(e)}")
+       return 0
 
 @app.get("/event/{event_id}/updates", response_model=list[dict])
 async def get_event_updates(event_id: int, limit: int = 10):
@@ -1834,16 +1840,31 @@ async def search_issues_by_filter(
         return issues
 
 
-@app.get("/issue/{issue_id}", response_model=Issue)
+@app.get("/issue/{issue_id}", response_model=dict)
 async def get_issue(issue_id: int):
     """
-    Retrieve a specific community issue by its ID.
+    Retrieve a specific community issue by its ID, along with the list of images posted for the issue.
     """
     with Session(engine) as session:
-        issue = session.get(Issue, issue_id)
-        if not issue:
+        db_issue = session.get(Issue, issue_id)
+        if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        return issue
+        
+        # Fetch images for this issue
+        images = (
+            session.exec(select(UploadIssue).where(UploadIssue.issue_id == issue_id))
+            .scalars()
+            .all()
+        )
+        image_filenames = [img.filename for img in images]
+        
+        # Convert Issue object to dictionary
+        from fastapi.encoders import jsonable_encoder
+        
+        issue_dict = jsonable_encoder(db_issue)
+        
+        # Return issue data and image filenames
+        return {"issue": issue_dict, "images": image_filenames}
 
 
 import math
@@ -2002,4 +2023,4 @@ async def get_user_tickets(username: str):
             return []
             
         return tickets
-    
+
