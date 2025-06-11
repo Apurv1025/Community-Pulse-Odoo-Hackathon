@@ -73,8 +73,12 @@ const fetchEvents = async () => {
             processing: false,
             flagging: false,
             actionType: null,
-            // Add a default image URL for the admin view
-            image_url: `${config.public.backendUrl}/uploads/default-event.jpg`
+            // Use the first image from images array if available, otherwise use default
+            image_url: event.images && event.images.length > 0
+                ? `${config.public.backendUrl}/uploads/${event.images[0]}`
+                : `${config.public.backendUrl}/uploads/default-event.jpg`,
+            // Flag if an image exists
+            image: event.images && event.images.length > 0
         }));
     } catch (err) {
         console.error('Error fetching events:', err);

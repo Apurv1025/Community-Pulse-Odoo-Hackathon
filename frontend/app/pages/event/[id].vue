@@ -147,8 +147,8 @@
                                             No tickets available for this event
                                         </div>
                                         <div v-for="tier in tiers" :key="tier.id"
-                                            class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50"
-                                            :class="{ 'border-primary bg-primary-50': selectedTierId === tier.id }"
+                                            class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50 hover:text-gray-800"
+                                            :class="{ 'border-primary bg-primary-50 text-primary-800': selectedTierId === tier.id }"
                                             @click.stop="selectedTierId = tier.id">
                                             <div class="flex items-center justify-between mb-2">
                                                 <div class="flex items-center gap-2">

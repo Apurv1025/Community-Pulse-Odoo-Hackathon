@@ -44,7 +44,6 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
-
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
@@ -202,92 +201,86 @@ import json
 
 @app.put("/event/edit/{event_id}", response_model=EventUpdate)
 async def update_event(
-   event_id: int,
-   event_update: EventUpdateModel,
-   current_user: Annotated[User, Depends(get_current_active_user)],
+    event_id: int,
+    event_update: EventUpdateModel,
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-   """
-   Update an event. Only provided fields will be updated.
-   Records changes in EventUpdates table and notifies registered users.
-   """
-   with Session(engine) as session:
-       db_event = session.get(Event, event_id)
-       if not db_event:
-           raise HTTPException(status_code=404, detail="Event not found")
-       if db_event.organiser != current_user.username:
-           raise HTTPException(
-               status_code=403, detail="Not authorized to edit this event"
-           )
-          
-       # Store original values to track changes
-       changes = []
-       event_data = event_update.model_dump(exclude_unset=True)
-      
-       if not event_data:
-           return db_event  # No changes if no fields provided
-          
-       # Track changes and update fields
-       for key, new_value in event_data.items():
-           if hasattr(db_event, key):
-               old_value = getattr(db_event, key)
-              
-               # Only record if value actually changed
-               if old_value != new_value:
-                   # Convert datetime objects to strings for readability
-                   old_display = old_value
-                   new_display = new_value
-                   if isinstance(old_value, datetime):
-                       old_display = old_value.strftime("%Y-%m-%d %H:%M")
-                   if isinstance(new_value, datetime):
-                       new_display = new_value.strftime("%Y-%m-%d %H:%M")
-                      
-                   # Record the change
-                   changes.append({
-                       "field": key,
-                       "from": str(old_display),
-                       "to": str(new_display)
-                   })
-                  
-                   # Update the field
-                   setattr(db_event, key, new_value)
-      
-       # Only proceed if there were actual changes
-       if changes:
-           # Update the event
-           session.add(db_event)
-          
-           # Create human-readable update messages
-           update_messages = []
-           for change in changes:
-               update_messages.append(
-                   f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
-               )
-          
-           # Create a record in EventUpdates
-           event_update_record = EventUpdates(
-               event_id=event_id,
-               username=current_user.username,
-               LastReminder=datetime.now(),
-               LastUpdate=json.dumps({
-                   "changes": changes,
-                   "summary": update_messages
-               })
-           )
-          
-           session.add(event_update_record)
-           # Commit to get the ID of the new record
-           session.commit()
-           # Refresh to ensure we have the ID
-           session.refresh(event_update_record)
-           # Refresh the event as well
-           session.refresh(db_event)
-          
-           # Send notifications to all registered users
-           # Pass the update_record_id instead of update_messages
-           notify_users_of_event_update(session, event_id, event_update_record.id)
-      
-       return db_event
+    """
+    Update an event. Only provided fields will be updated.
+    Records changes in EventUpdates table and notifies registered users.
+    """
+    with Session(engine) as session:
+        db_event = session.get(Event, event_id)
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if db_event.organiser != current_user.username:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to edit this event"
+            )
 
+        # Store original values to track changes
+        changes = []
+        event_data = event_update.model_dump(exclude_unset=True)
+
+        if not event_data:
+            return db_event  # No changes if no fields provided
+
+        # Track changes and update fields
+        for key, new_value in event_data.items():
+            if hasattr(db_event, key):
+                old_value = getattr(db_event, key)
+
+                # Only record if value actually changed
+                if old_value != new_value:
+                    # Convert datetime objects to strings for readability
+                    old_display = old_value
+                    new_display = new_value
+                    if isinstance(old_value, datetime):
+                        old_display = old_value.strftime("%Y-%m-%d %H:%M")
+                    if isinstance(new_value, datetime):
+                        new_display = new_value.strftime("%Y-%m-%d %H:%M")
+
+                    # Record the change
+                    changes.append(
+                        {"field": key, "from": str(old_display), "to": str(new_display)}
+                    )
+
+                    # Update the field
+                    setattr(db_event, key, new_value)
+
+        # Only proceed if there were actual changes
+        if changes:
+            # Update the event
+            session.add(db_event)
+
+            # Create human-readable update messages
+            update_messages = []
+            for change in changes:
+                update_messages.append(
+                    f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
+                )
+
+            # Create a record in EventUpdates
+            event_update_record = EventUpdates(
+                event_id=event_id,
+                username=current_user.username,
+                LastReminder=datetime.now(),
+                LastUpdate=json.dumps({"changes": changes, "summary": update_messages}),
+            )
+
+            session.add(event_update_record)
+            # Commit to get the ID of the new record
+            session.commit()
+            # Refresh to ensure we have the ID
+            session.refresh(event_update_record)
+            # Refresh the event as well
+            session.refresh(db_event)
+
+            # Send notifications to all registered users
+            # Pass the update_record_id instead of update_messages
+            notify_users_of_event_update(session, event_id, event_update_record.id)
+
+        return db_event
 
 
 class EventResponse(BaseModel):
@@ -325,7 +318,9 @@ async def get_all_events(
     Disabled users cannot see any events.
     """
     if getattr(current_user, "disabled", False):
-        raise HTTPException(status_code=403, detail="User is banned and cannot view events")
+        raise HTTPException(
+            status_code=403, detail="User is banned and cannot view events"
+        )
 
     with Session(engine) as session:
         events = (
@@ -335,30 +330,32 @@ async def get_all_events(
             .scalars()
             .all()
         )
-        
+
         results = []
-        
+
         # Process each event and add its images
         for event in events:
             # Convert ORM object to Pydantic model
             event_data = EventResponse.from_orm(event)
-            
+
             # Fetch images for this event
             images = (
-                session.exec(select(UploadEvent).where(UploadEvent.event_id == event.id))
+                session.exec(
+                    select(UploadEvent).where(UploadEvent.event_id == event.id)
+                )
                 .scalars()
                 .all()
             )
-            
+
             # Extract image filenames
             image_filenames = [img.filename for img in images]
-            
+
             # Create a dictionary with event data and images
             event_dict = event_data.dict()
             event_dict["images"] = image_filenames
-            
+
             results.append(event_dict)
-            
+
         return results
 
 
@@ -458,13 +455,14 @@ async def reject_event(
         return db_event
 
 
-@app.get("/admin/requestevents", response_model=list[EventResponse])
+@app.get("/admin/requestevents", response_model=list[dict])
 async def get_all_request_events(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """
     Retrieve all events from the database that are not accepted or rejected.
     Only admin users can access this endpoint.
+    Includes the first image for each event if available.
     """
     if not current_user.isAdmin:
         raise HTTPException(
@@ -480,7 +478,35 @@ async def get_all_request_events(
             .scalars()
             .all()
         )
-        return [EventResponse.from_orm(event) for event in events]
+
+        result = []
+        for event in events:
+            # Convert event to response model and then to dict
+            event_data = EventResponse.from_orm(event).dict()
+
+            # Get all images for this event, similar to /events endpoint
+            images = (
+                session.exec(
+                    select(UploadEvent).where(UploadEvent.event_id == event.id)
+                )
+                .scalars()
+                .all()
+            )
+
+            # Extract image filenames
+            image_filenames = [img.filename for img in images]
+
+            # Add images to event data
+            event_data["images"] = image_filenames
+
+            # Add the first image as img_url for backward compatibility
+            event_data["img_url"] = (
+                f"/uploads/{image_filenames[0]}" if image_filenames else None
+            )
+
+            result.append(event_data)
+
+        return result
 
 
 @app.get("/admin/event/flag/{event_id}", response_model=Event)
@@ -1165,30 +1191,33 @@ async def get_all_issues():
         issues = (
             session.exec(select(Issue).where(Issue.hidden == False)).scalars().all()
         )
-        
+
         from fastapi.encoders import jsonable_encoder
+
         results = []
-        
+
         # Process each issue and add its images
         for issue in issues:
             # Convert issue to dictionary
             issue_dict = jsonable_encoder(issue)
-            
+
             # Fetch images for this issue
             images = (
-                session.exec(select(UploadIssue).where(UploadIssue.issue_id == issue.id))
+                session.exec(
+                    select(UploadIssue).where(UploadIssue.issue_id == issue.id)
+                )
                 .scalars()
                 .all()
             )
-            
+
             # Extract image filenames
             image_filenames = [img.filename for img in images]
-            
+
             # Add images to issue data
             issue_dict["images"] = image_filenames
-            
+
             results.append(issue_dict)
-            
+
         return results
 
 
@@ -1233,25 +1262,25 @@ async def update_issue(
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        
+
         # Check if the current user is the creator of this issue or an admin
         if db_issue.personal != current_user.username and not current_user.isAdmin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to update this issue"
             )
-        
+
         # Store original values to track changes
         changes = []
         update_data = issue_update.model_dump(exclude_unset=True)
-        
+
         if not update_data:
             return db_issue  # No changes if no fields provided
-        
+
         # Track changes and update fields
         for key, new_value in update_data.items():
             if hasattr(db_issue, key):
                 old_value = getattr(db_issue, key)
-                
+
                 # Only record if value actually changed
                 if old_value != new_value:
                     # Convert datetime objects to strings for readability
@@ -1261,45 +1290,41 @@ async def update_issue(
                         old_display = old_value.strftime("%Y-%m-%d %H:%M")
                     if isinstance(new_value, datetime):
                         new_display = new_value.strftime("%Y-%m-%d %H:%M")
-                    
+
                     # Record the change
-                    changes.append({
-                        "field": key,
-                        "from": str(old_display),
-                        "to": str(new_display)
-                    })
-                    
+                    changes.append(
+                        {"field": key, "from": str(old_display), "to": str(new_display)}
+                    )
+
                     # Update the field
                     setattr(db_issue, key, new_value)
-        
+
         # Only proceed if there were actual changes
         if changes:
             # Update the issue
             session.add(db_issue)
-            
+
             # Create human-readable update messages
             update_messages = []
             for change in changes:
                 update_messages.append(
                     f"{change['field']} changed from '{change['from']}' to '{change['to']}'"
                 )
-            
+
             # Create a record in IssueUpdates
             issue_update_record = IssueUpdates(
                 issue_id=issue_id,
                 username=current_user.username,
                 LastReminder=datetime.now(),
-                LastUpdate=json.dumps({
-                    "changes": changes,
-                    "summary": update_messages
-                })
+                LastUpdate=json.dumps({"changes": changes, "summary": update_messages}),
             )
-            
+
             session.add(issue_update_record)
             session.commit()
             session.refresh(db_issue)
-        
+
         return db_issue
+
 
 @app.delete("/issues/delete/{issue_id}", response_model=dict)
 async def delete_issue(
@@ -1313,7 +1338,7 @@ async def delete_issue(
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        
+
         # Check if the current user is the creator of this issue or an admin
         if db_issue.personal != current_user.username and not current_user.isAdmin:
             raise HTTPException(
@@ -1324,6 +1349,7 @@ async def delete_issue(
         session.commit()
 
         return {"detail": "Issue deleted successfully"}
+
 
 @app.get("/issues/{issue_id}/upvotes", response_model=int)
 async def get_issue_upvotes(issue_id: int):
@@ -1498,82 +1524,83 @@ def send_event_update_emails(
     return sent_count
 
 
-
 # Update this function to use the separated update notification system
 def notify_users_of_event_update(session, event_id, update_record_id):
     """
     Send email notifications to users registered for an event when it's updated.
     Uses the dedicated event update notification system.
     """
-    print(f"Starting update notification process for event {event_id}, update {update_record_id}")
-    
+    print(
+        f"Starting update notification process for event {event_id}, update {update_record_id}"
+    )
+
     try:
         # Verify data integrity
         db_event = session.get(Event, event_id)
         if not db_event:
             print(f"ERROR: Event {event_id} not found")
             return 0
-        
+
         update_record = session.get(EventUpdates, update_record_id)
         if not update_record:
             print(f"ERROR: Update record {update_record_id} not found")
             return 0
-        
+
         # Get registered users and followers
         registered_users_query = (
             select(EventRegistered, User)
             .join(User, EventRegistered.username == User.username)
             .where(EventRegistered.event_id == event_id)
         )
-        
+
         following_users_query = (
             select(EventFollowing, User)
             .join(User, EventFollowing.username == User.username)
             .where(EventFollowing.event_id == event_id)
         )
-        
+
         # Collect unique recipients
         recipients = {}
-        
+
         for reg, user in session.exec(registered_users_query).all():
             if user.email:
                 recipients[user.username] = user.email
-        
+
         for follow, user in session.exec(following_users_query).all():
             if user.email and user.username not in recipients:
                 recipients[user.username] = user.email
-        
+
         # If no recipients, return early
         if not recipients:
             print("No recipients found with valid emails")
             return 0
-        
+
         print(f"Sending update notifications to {len(recipients)} unique recipients")
-        
+
         # Import the dedicated update task
         from backend.email_tasks import send_event_update_notification
-        
+
         # Queue tasks for each recipient
         sent_count = 0
         for username, email in recipients.items():
             try:
                 print(f"Queueing update notification for {username} ({email})")
                 send_event_update_notification.delay(
-                    recipient_email=email,
-                    event_id=event_id,
-                    update_id=update_record_id
+                    recipient_email=email, event_id=event_id, update_id=update_record_id
                 )
                 sent_count += 1
             except Exception as e:
                 print(f"Failed to queue update notification for {username}: {str(e)}")
-        
+
         print(f"Successfully queued {sent_count} update notifications")
         return sent_count
     except Exception as e:
         print(f"ERROR in notify_users_of_event_update: {str(e)}")
         import traceback
+
         print(traceback.format_exc())
         return 0
+
 
 @app.get("/event/{event_id}/updates", response_model=list[dict])
 async def get_event_updates(event_id: int, limit: int = 10):
@@ -1866,7 +1893,7 @@ async def get_issue(issue_id: int):
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        
+
         # Fetch images for this issue
         images = (
             session.exec(select(UploadIssue).where(UploadIssue.issue_id == issue_id))
@@ -1874,12 +1901,12 @@ async def get_issue(issue_id: int):
             .all()
         )
         image_filenames = [img.filename for img in images]
-        
+
         # Convert Issue object to dictionary
         from fastapi.encoders import jsonable_encoder
-        
+
         issue_dict = jsonable_encoder(db_issue)
-        
+
         # Return issue data and image filenames
         return {"issue": issue_dict, "images": image_filenames}
 
@@ -1966,7 +1993,9 @@ async def get_nearby_issues(
 
         return issues
 
+
 from backend.models import UploadIssue
+
 
 @app.post("/issue/{issue_id}/upload")
 async def upload_issue_file(
@@ -2019,27 +2048,33 @@ async def upload_issue_file(
         "size": len(content),
     }
 
+
 @app.get("/tickets/user/{username}", response_model=list[UserEventTickets])
 async def get_user_tickets(username: str):
     """
     Get all ticket records for a specific user.
-    
+
     Parameters:
     - username: The username of the user to retrieve tickets for
-    
+
     Returns:
     - A list of ticket records for the specified user
     """
     with Session(engine) as session:
-        tickets = session.exec(
-            select(UserEventTickets).where(UserEventTickets.username == username)
-        ).scalars().all()
-        
+        tickets = (
+            session.exec(
+                select(UserEventTickets).where(UserEventTickets.username == username)
+            )
+            .scalars()
+            .all()
+        )
+
         if not tickets:
             # Return empty list instead of 404 to maintain consistent return type
             return []
-            
+
         return tickets
+
 
 @app.get("/admin/unhide/issue/{issue_id}", response_model=Issue)
 async def unhide_issue(
@@ -2050,24 +2085,23 @@ async def unhide_issue(
     Unhide a community issue. Only admin users can access this endpoint.
     """
     if not getattr(current_user, "isAdmin", False):
-        raise HTTPException(
-            status_code=403, detail="Not authorized to unhide issues"
-        )
-    
+        raise HTTPException(status_code=403, detail="Not authorized to unhide issues")
+
     with Session(engine) as session:
         db_issue = session.get(Issue, issue_id)
         if not db_issue:
             raise HTTPException(status_code=404, detail="Issue not found")
-        
+
         # Unhide the issue
         db_issue.hidden = False
         session.add(db_issue)
         session.commit()
         session.refresh(db_issue)
-        
+
         return db_issue
-    
-@app.post("/allusers",response_model=list[User])
+
+
+@app.post("/allusers", response_model=list[User])
 async def get_all_users(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
@@ -2075,14 +2109,13 @@ async def get_all_users(
     Retrieve all users in the system. Only admin users can access this endpoint.
     """
     if not getattr(current_user, "isAdmin", False):
-        raise HTTPException(
-            status_code=403, detail="Not authorized to view all users"
-        )
-    
+        raise HTTPException(status_code=403, detail="Not authorized to view all users")
+
     with Session(engine) as session:
         users = session.exec(select(User)).scalars().all()
         return users
-    
+
+
 @app.post("/admin/banuser/{username}", response_model=User)
 async def ban_user(
     username: str,
@@ -2092,23 +2125,22 @@ async def ban_user(
     Ban a user from the system. Only admin users can access this endpoint.
     """
     if not getattr(current_user, "isAdmin", False):
-        raise HTTPException(
-            status_code=403, detail="Not authorized to ban users"
-        )
-    
+        raise HTTPException(status_code=403, detail="Not authorized to ban users")
+
     with Session(engine) as session:
         db_user = session.get(User, username)
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # Ban the user
         db_user.disabled = True
         session.add(db_user)
         session.commit()
         session.refresh(db_user)
-        
+
         return db_user
-    
+
+
 @app.post("/admin/verifyuser/{username}", response_model=User)
 async def verify_user(
     username: str,
@@ -2118,19 +2150,17 @@ async def verify_user(
     Verify a user in the system. Only admin users can access this endpoint.
     """
     if not getattr(current_user, "isAdmin", False):
-        raise HTTPException(
-            status_code=403, detail="Not authorized to verify users"
-        )
-    
+        raise HTTPException(status_code=403, detail="Not authorized to verify users")
+
     with Session(engine) as session:
         db_user = session.get(User, username)
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # Verify the user - fixed spelling of "Organizer"
         db_user.isVerifiedOrganizer = True
         session.add(db_user)
         session.commit()
         session.refresh(db_user)
-        
+
         return db_user
